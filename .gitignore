@@ -1,0 +1,9 @@
+cache/
+out/
+dist/
+foundry.lock
+node_modules/
+.env
+.venv/
+.sibyl-memory-demo/
+.claude/

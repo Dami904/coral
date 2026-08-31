@@ -1,0 +1,88 @@
+# Runs lint, typecheck, build, test, and forge test as separate jobs so a
+# failure in one doesn't hide a failure in another, and so the CI badge on
+# the README means "everything passed," not just "it compiled." Every job
+# here runs the exact scripts a cold `git clone && pnpm install` reviewer
+# would run themselves — no secrets, no funded wallet, no network calls to
+# anything paid (see CLAUDE.md's engineering rules and docs/LIMITATIONS.md).
+# Anything that DOES need a secret/funded wallet is named `live:*`/
+# `deploy:*` and deliberately never runs here.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  NODE_VERSION: "20"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      # The test path a cold reviewer can run: no live API keys, no funded
+      # wallet, no network calls to paid services. Every port (memory,
+      # chain, x402, Ping) is exercised behind a fake or an in-process
+      # local HTTP server — see docs/LIMITATIONS.md's "reproducible cold"
+      # note and README's Setup section.
+      - run: pnpm test
+
+  contracts:
+    name: Contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      # SpendGuard's constructor needs solc's IR pipeline (see
+      # foundry.toml's via_ir note) — `forge build` picks that up from
+      # foundry.toml automatically, no extra flags needed here.
+      - run: forge build
+      - run: forge test -vvv

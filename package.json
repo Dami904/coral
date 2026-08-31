@@ -1,0 +1,43 @@
+{
+  "name": "coral",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.build.json",
+    "deploy:testnet": "forge script script/Deploy.s.sol:Deploy --rpc-url base_sepolia --broadcast",
+    "deploy:mainnet": "forge script script/DeployMainnet.s.sol:DeployMainnet --rpc-url base_mainnet --broadcast --verify",
+    "mock:x402": "node mock-x402-server/server.mjs",
+    "live:day3-smoke": "tsx scripts/live-day3-smoke.ts",
+    "live:day5-smoke": "tsx scripts/live-day5-smoke.ts",
+    "live:ping-listener": "tsx scripts/live-ping-listener.ts",
+    "live:deletion-test": "tsx scripts/live-deletion-test.ts",
+    "live:escalation-demo": "tsx scripts/live-escalation-demo.ts",
+    "live:escalation-resume-demo": "tsx scripts/live-escalation-resume-demo.ts",
+    "live:ping-register": "tsx scripts/live-ping-register.ts",
+    "live:mainnet-smoke": "tsx scripts/live-mainnet-smoke.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "dotenv": "17.4.2",
+    "ping-onchain": "0.1.5",
+    "viem": "2.55.19",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.1",
+    "eslint": "10.9.1",
+    "tsx": "4.23.12",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.68.0",
+    "vitest": "4.1.11"
+  }
+}

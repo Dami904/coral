@@ -1,0 +1,24 @@
+[profile.default]
+src = "contracts"
+out = "out"
+libs = ["lib"]
+script = "script"
+# SpendGuard's constructor takes enough parameters (timelock delay, ring-
+# buffer capacities, full initial policy) to trip solc's "stack too deep"
+# without the IR pipeline — this doesn't change contract behavior, only how
+# it's compiled.
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+
+[rpc_endpoints]
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+# Mainnet: real funds, real gas. Only ever used by script/DeployMainnet.s.sol
+# via `pnpm deploy:mainnet`, deliberately a separate script and command from
+# `deploy:testnet` (see script/Deploy.s.sol vs script/DeployMainnet.s.sol) so
+# the testnet path can never accidentally broadcast here.
+base_mainnet = "${BASE_MAINNET_RPC_URL}"
+
+[etherscan]
+base_sepolia = { key = "${BASESCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
+base_mainnet = { key = "${BASESCAN_API_KEY}", url = "https://api.basescan.org/api" }
