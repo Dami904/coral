@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Dami904/coral/actions/workflows/ci.yml/badge.svg)](https://github.com/Dami904/coral/actions/workflows/ci.yml)
 
+**The agent that never pays twice.**
+
 An agent for the Sibyl Labs Hackathon (Sep 1–10, 2026) that receives
 inbound messages over **Ping** (Sibyl's on-chain agent-to-agent messaging
 protocol on Base), consults **Sibyl Memory** before ever acting, and only
@@ -10,6 +12,12 @@ when memory has no cached verdict or the cached one is stale. That
 payment is gated by an on-chain **`SpendGuard`** contract on Base — the
 agent's wallet can only *request* a payment; the contract, not the
 agent's own reasoning, decides whether it's allowed.
+
+Coral is not itself a memory/cache layer — that's Sibyl Memory, used here
+over the standard MCP interface. Coral is the payment-gated decision layer
+built on top of it: the part that turns "have I already answered this"
+into "then don't pay again," and enforces that on-chain instead of just
+hoping the agent remembers to check.
 
 ## The problem
 
@@ -60,6 +68,38 @@ the agent has to guess at or re-derive, and its journal
 (`memory_record_event`) makes the whole decision trail — cache hits vs.
 real payments — trivially inspectable by a human after the fact, not just
 by re-reading logs.
+
+## Gateway mode: other agents can pay Coral, too
+
+Everything above is Coral spending its own money to answer its own
+queries. `handleGatewayQuery` (`src/decisionCore.ts`) adds the mirror
+case: another agent pays *Coral*, over Ping, for the same lookup.
+
+A Ping message carrying both a contract address and a payment tx hash is
+treated as a gateway request instead of the free path — no keyword or
+prefix convention needed, the two are unambiguous by length alone (see
+`extractGatewayRequest` in `src/ping/pollOnce.ts`). The claimed payment is
+never trusted on the caller's word: `SpendGuardIncomingPaymentVerifier`
+(`src/gateway/incomingPaymentVerifier.ts`) reads the real mined receipt
+for that tx hash and decodes the USDC `Transfer` event itself, confirming
+it actually moved the required fee to `SpendGuard`'s own address — the
+same treasury Coral's own outgoing spend already draws from, so accepting
+gateway fees there introduces no new fund-holding authority. Each payment
+tx hash can only ever be redeemed once: a replay ledger in Sibyl Memory
+(`wasPaymentConsumed`/`markPaymentConsumed`) is checked before, and marked
+immediately after, verification — so deleting Sibyl Memory breaks this
+double-spend guarantee too, not just the cache.
+
+Once a payment verifies, the request delegates straight into the same
+`handleTokenQuery` path Coral's own queries use: a cache hit costs Coral
+nothing further and the gateway fee is pure margin; a cache miss has Coral
+pay Sibyl out of the fee that was just collected. No second smart
+contract was needed for this — `SpendGuard` already gates Coral's own
+outgoing spend, so incoming gateway fees only ever needed a receipt read,
+not a new enforcement layer. See `PLAN.md`'s "Gateway direction" entry for
+the full design rationale and `docs/LIMITATIONS.md`'s "Gateway (Direction
+B)" section for its accepted edge cases (a narrow concurrent-reuse race
+on the same tx hash, no refund on a downstream failure).
 
 ## Partner stacks (Base)
 
