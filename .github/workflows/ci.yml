@@ -15,7 +15,11 @@ on:
   pull_request:
 
 env:
-  NODE_VERSION: "20"
+  # pnpm@11 (pinned via package.json's packageManager) requires Node >=22.13
+  # (it needs the node:sqlite builtin) — keep this in sync with that pin and
+  # with package.json's engines.node, or CI breaks on a version bump neither
+  # file mentions.
+  NODE_VERSION: "22"
 
 jobs:
   lint:
