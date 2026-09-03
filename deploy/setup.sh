@@ -76,11 +76,29 @@ sudo -u "$SERVICE_USER" bash -lc "cd '$APP_DIR' && pnpm install --frozen-lockfil
 echo "== env file =="
 if [ ! -f "$CONFIG_DIR/coral.env" ]; then
   cp "$APP_DIR/.env.example" "$CONFIG_DIR/coral.env"
+  # .env.example's placeholder text (e.g. "0x_owner_testnet_key_never_a_real_key")
+  # is documentation, not a usable value — but config.ts's zod schema
+  # validates a field's regex whenever it's *present*, `.optional()` only
+  # skips validation when the key is absent entirely. Left as literal
+  # placeholder text, these three make loadConfig() throw and crash-loop
+  # the service before it ever binds a port (found running the real
+  # deployed service, not by reading the schema). Comment them out here so
+  # a fresh deploy starts cleanly on testnet defaults; uncomment and fill
+  # in real values only when deliberately going to mainnet.
+  sed -i \
+    -e 's|^DEPLOYER_PRIVATE_KEY=0x_.*|#&|' \
+    -e 's|^MAINNET_SPEND_GUARD_ADDRESS=0x_.*|#&|' \
+    -e 's|^MAINNET_VENDOR_PAYTO_ADDRESS=0x_.*|#&|' \
+    -e 's|^VENDOR_PRIVATE_KEY=0x_.*|#&|' \
+    -e 's|^MOCK_USDC_ADDRESS=0x_.*|#&|' \
+    "$CONFIG_DIR/coral.env"
   chown "$SERVICE_USER:$SERVICE_USER" "$CONFIG_DIR/coral.env"
   chmod 600 "$CONFIG_DIR/coral.env"
-  echo ">>> Fill in real values in $CONFIG_DIR/coral.env before starting the services."
-  echo ">>> Set SIBYL_MEMORY_DB=$DATA_DIR/memory.db in that file — the persistent"
-  echo ">>> data directory, not the repo-relative .sibyl-memory-demo/ default."
+  echo ">>> Fill in real values in $CONFIG_DIR/coral.env before starting the services"
+  echo ">>> (at minimum AGENT_PRIVATE_KEY, SPEND_GUARD_ADDRESS, VENDOR_PAYTO_ADDRESS)."
+  echo ">>> Set SIBYL_MEMORY_DB=$DATA_DIR/memory.db and SIBYL_MEMORY_MCP_COMMAND="
+  echo ">>> $VENV_DIR/bin/sibyl-memory-mcp in that file — the persistent data"
+  echo ">>> directory and the venv install, not the repo-relative/bare-PATH defaults."
 else
   echo "$CONFIG_DIR/coral.env already exists — leaving it as-is."
 fi
