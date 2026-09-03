@@ -15,6 +15,12 @@ RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/coral
+# tsx (the live:* scripts run through it) needs a writable /tmp for its
+# IPC socket — ProtectSystem=strict makes the real /tmp read-only too, so
+# without this ExecStart fails immediately with ENOENT on mkdir('/tmp/tsx-*').
+# PrivateTmp gives the service its own isolated, writable /tmp instead of
+# opening up the host's real one.
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

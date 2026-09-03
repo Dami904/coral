@@ -18,6 +18,9 @@ RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/coral
+# tsx needs a writable /tmp for its IPC socket — see coral-http-server.service's
+# identical comment for the failure this fixes.
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
