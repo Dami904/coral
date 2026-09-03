@@ -69,6 +69,19 @@ the agent has to guess at or re-derive, and its journal
 real payments — trivially inspectable by a human after the fact, not just
 by re-reading logs.
 
+## Try it live
+
+Coral's free HTTP gateway is running continuously at
+`https://3-216-178-169.nip.io` (a real Base Sepolia deployment, not a
+staged demo — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)):
+
+```bash
+curl "https://3-216-178-169.nip.io/check?token=0x0000000000000000000000000000000000000001"
+```
+
+The landing page (`coral-landing/index.html`) has a live "Try it now"
+widget wired to this same endpoint.
+
 ## Gateway mode: other agents can pay Coral, too
 
 Everything above is Coral spending its own money to answer its own

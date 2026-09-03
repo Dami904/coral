@@ -163,3 +163,14 @@ own use — see `PLAN.md`'s "Gateway direction" entry for the design.
   trusts any well-formed tx hash. Passing against it proves client logic,
   not real settlement; only the real mainnet call (not yet run) proves
   that.
+- **Caddy's TLS setup (`deploy/setup.sh`) starts Caddy before the firewall
+  section opens `80`/`443` in `ufw`.** Harmless on a genuinely fresh VM
+  (`ufw` defaults to inactive until the script's own `ufw --force enable`
+  runs later in the same pass), but re-running `setup.sh` against an
+  already-hardened box only recovers because Caddy retries certificate
+  issuance in the background — the script doesn't sequence this
+  deliberately. Let's Encrypt also rate-limits certificate issuance per
+  domain; a nip.io hostname is derived per-IP so this is unlikely to bite
+  in practice, but repeatedly tearing down and recreating the same EC2
+  instance (same IP → same nip.io hostname) in a short window could hit
+  it. See `docs/DEPLOYMENT.md`'s TLS section for the recovery steps.

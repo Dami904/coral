@@ -201,6 +201,47 @@
   .legend-swatch.pay { background: var(--reef-deep); }
   .legend-swatch.blocked { background: repeating-linear-gradient(90deg, var(--muted) 0 3px, transparent 3px 6px); }
 
+  /* ---------- live widget ---------- */
+  .live-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+    padding: clamp(20px, 3.5vw, 36px); box-shadow: var(--shadow);
+  }
+  .live-endpoint {
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--muted);
+    margin-bottom: 18px;
+  }
+  .live-endpoint code { color: var(--reef-deep); }
+  .live-form { display: flex; gap: 10px; flex-wrap: wrap; }
+  .live-input {
+    flex: 1 1 320px; min-width: 0;
+    font-family: "IBM Plex Mono", monospace; font-size: 14px;
+    padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--paper); color: var(--ink);
+  }
+  .live-input:focus-visible { outline: 2px solid var(--reef); outline-offset: 1px; }
+  .live-form button.btn { flex: none; cursor: pointer; }
+  .live-form button.btn:disabled { opacity: 0.6; cursor: progress; transform: none; }
+  .live-examples { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  .live-examples button {
+    font: inherit; font-family: "IBM Plex Mono", monospace; font-size: 12px;
+    color: var(--reef); background: none; border: none; padding: 0; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .live-result {
+    margin-top: 20px; padding: 16px 18px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--paper);
+    font-size: 14px; display: none;
+  }
+  .live-result.show { display: block; }
+  .live-result .row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 4px 0; }
+  .live-result .row .k { color: var(--muted); font-size: 12.5px; }
+  .live-result .row .v { font-family: "IBM Plex Mono", monospace; font-size: 13px; text-align: right; }
+  .live-result .note { margin-top: 8px; color: var(--muted); font-size: 13px; }
+  .live-badge { display: inline-flex; align-items: center; gap: 6px; font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500; }
+  .live-badge.ok { color: var(--good); }
+  .live-badge.wait { color: var(--wait); }
+  .live-badge.bad { color: #B23B2E; }
+
   /* A resting sea, not a static shape: the water line drifts sideways in a
      seamless loop (two periods in one viewBox, scrolled by exactly one
      period) while the whole band breathes up and down like a slow swell. */
@@ -333,6 +374,7 @@
       <span>Coral</span>
     </a>
     <nav class="links">
+      <a href="#live">Try it live</a>
       <a href="#how">How it works</a>
       <a href="#proof">Proof</a>
       <a href="#honesty">What's real</a>
@@ -426,6 +468,28 @@
       </svg>
     </div>
   </div>
+
+  <section id="live" class="on-line">
+    <div class="wrap">
+      <div class="section-head" data-reveal>
+        <span class="eyebrow">Not a mockup</span>
+        <h2 class="kicker">Query the real, deployed agent right now.</h2>
+        <p class="prose" style="color:var(--muted); margin:0;">This calls Coral's actual public HTTP gateway over HTTPS — the same process running <code>src/decisionCore.ts</code> against Sibyl Memory and the deployed Base Sepolia <code>SpendGuard</code>. A never-seen contract triggers a real on-chain call and, since the real Sibyl price ($0.25) sits above this deployment's human-approval threshold, will come back needing sign-off rather than resolving instantly — that's the policy working, not an error.</p>
+      </div>
+      <div class="live-card" data-reveal>
+        <div class="live-endpoint">GET <code id="live-endpoint-url">https://3-216-178-169.nip.io/check?token=…</code></div>
+        <form class="live-form" id="live-form">
+          <input class="live-input" id="live-token" type="text" placeholder="0x… a 20-byte contract address" autocomplete="off" spellcheck="false" />
+          <button class="btn primary" type="submit" id="live-submit">Check</button>
+        </form>
+        <div class="live-examples">
+          Try: <button type="button" data-token="0x0000000000000000000000000000000000000001">a previously-queried contract</button>
+          &middot; <button type="button" id="live-random">a fresh, never-seen one</button>
+        </div>
+        <div class="live-result" id="live-result" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
 
   <section id="problem">
     <div class="wrap problem-grid">
@@ -654,6 +718,131 @@
       });
     }, { threshold: 0.1 });
     els.forEach(function (el) { io.observe(el); });
+  })();
+</script>
+
+<script>
+  (function () {
+    // The real, deployed HTTP gateway (docs/DEPLOYMENT.md) — a genuine
+    // network call, not a fixture. Update this if the box or its Elastic
+    // IP ever changes.
+    var GATEWAY = "https://3-216-178-169.nip.io";
+    var CONTRACT_RE = /^0x[a-fA-F0-9]{40}$/;
+
+    var form = document.getElementById("live-form");
+    var input = document.getElementById("live-token");
+    var submit = document.getElementById("live-submit");
+    var result = document.getElementById("live-result");
+    if (!form) return;
+
+    function randomAddress() {
+      var hex = "0x";
+      for (var i = 0; i < 40; i++) hex += "0123456789abcdef"[Math.floor(Math.random() * 16)];
+      return hex;
+    }
+
+    var FETCH_TIMEOUT_MS = 20000;
+
+    // Every value below ultimately comes from the gateway's JSON response
+    // (or, in the catch branch, a pre-validated token). None of it is
+    // attacker-controlled today, but it's still a network response landing
+    // in innerHTML — escape it so that stays true if this ever changes.
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    function row(k, v) {
+      return '<div class="row"><span class="k">' + esc(k) + '</span><span class="v">' + esc(v) + "</span></div>";
+    }
+
+    function render(html) {
+      result.innerHTML = html;
+      result.classList.add("show");
+    }
+
+    function renderOutcome(status, data) {
+      if (data.outcome === "cache_hit" || data.outcome === "paid") {
+        var badge = data.outcome === "cache_hit"
+          ? '<span class="live-badge ok">cache hit &mdash; no payment</span>'
+          : '<span class="live-badge ok">paid live &mdash; fresh check</span>';
+        render(
+          badge +
+          row("Conviction tier", data.tier) +
+          (data.checkedAt ? row("Cached since", data.checkedAt) : "") +
+          (data.txHash ? row("Payment tx", data.txHash.slice(0, 10) + "…" + data.txHash.slice(-6)) : "") +
+          '<div class="note">' + esc(data.note) + "</div>"
+        );
+        return;
+      }
+      if (data.outcome === "pending_approval") {
+        render(
+          '<span class="live-badge wait">pending human approval</span>' +
+          row("Request ID", data.requestId) +
+          row("From block", data.fromBlock) +
+          '<div class="note">' + esc(data.note) + " This deployment's owner key isn't wired into this page — approving happens via <code>ownerApprove</code>, not from here.</div>"
+        );
+        return;
+      }
+      if (data.outcome === "blocked") {
+        render(
+          '<span class="live-badge bad">blocked by SpendGuard policy</span>' +
+          '<div class="note">' + esc(data.reason) + " — this is the on-chain guard refusing to pay, not a bug.</div>"
+        );
+        return;
+      }
+      render('<span class="live-badge bad">HTTP ' + esc(status) + "</span>" + '<div class="note">' + esc(data.error || "unexpected response") + "</div>");
+    }
+
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var token = input.value.trim();
+      if (!CONTRACT_RE.test(token)) {
+        render('<span class="live-badge bad">invalid address</span><div class="note">Expected a 0x-prefixed 20-byte contract address.</div>');
+        return;
+      }
+      submit.disabled = true;
+      submit.textContent = "Checking…";
+      render('<span class="live-badge wait">calling the live gateway…</span>');
+      var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timer = controller ? setTimeout(function () { controller.abort(); }, FETCH_TIMEOUT_MS) : null;
+      fetch(GATEWAY + "/check?token=" + encodeURIComponent(token), controller ? { signal: controller.signal } : undefined)
+        .then(function (res) {
+          return res.json().then(function (data) { return { status: res.status, data: data }; });
+        })
+        .then(function (r) { renderOutcome(r.status, r.data); })
+        .catch(function (err) {
+          var timedOut = err && err.name === "AbortError";
+          render(
+            '<span class="live-badge bad">' + (timedOut ? "timed out" : "request failed") + "</span>" +
+            '<div class="note">' +
+            (timedOut
+              ? "The gateway didn't respond within " + (FETCH_TIMEOUT_MS / 1000) + "s (an escalated request can involve a slow on-chain RPC call) — try again, or poll it directly."
+              : "Could not reach the gateway from your browser — it may be offline, or blocking a cross-origin request from this origin.") +
+            " Try <code>curl " + esc(GATEWAY + "/check?token=" + token) + "</code> directly.</div>"
+          );
+        })
+        .finally(function () {
+          if (timer) clearTimeout(timer);
+          submit.disabled = false;
+          submit.textContent = "Check";
+        });
+    });
+
+    document.querySelectorAll(".live-examples button[data-token]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        input.value = btn.getAttribute("data-token");
+        form.requestSubmit();
+      });
+    });
+    var randomBtn = document.getElementById("live-random");
+    if (randomBtn) {
+      randomBtn.addEventListener("click", function () {
+        input.value = randomAddress();
+        form.requestSubmit();
+      });
+    }
   })();
 </script>
 
