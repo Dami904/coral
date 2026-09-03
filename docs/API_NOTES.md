@@ -305,3 +305,55 @@ than skipped.
   risk a duplicate public, on-chain message. `pollOnce.ts`'s existing
   per-message try/catch means one failed reply never stops the others, and
   a fresh poll cycle gets another chance at the same underlying decision.
+
+## Virtuals Protocol ACP (Agent Commerce Protocol) — verified 2026-09-03
+
+Researched before writing any client, per this file's own standard.
+Not yet implemented — this section is the pre-work `CLAUDE.md` requires,
+not a claim that Coral has an ACP integration.
+
+- **Real current package: `@virtuals-protocol/acp-node-v2`** on npm
+  (confirmed via `Virtual-Protocol/acp-node-v2` on GitHub, `main`,
+  last pushed 2026-08-19). v1 (`@virtuals-protocol/acp-node`, no `-v2`
+  suffix) is deprecated — don't use it.
+- **Base Sepolia is genuinely supported** (confirmed reading
+  `src/core/chains.ts`: `EVM_TESTNET_CHAINS = [baseSepolia, bscTestnet,
+  robinhoodTestnet]`) — unlike Ping (mainnet-only, see above), ACP has a
+  real free testnet path, matching this repo's Sepolia-first pattern.
+  `EVM_MAINNET_CHAINS = [base, robinhood]`.
+- **Architecture is event-driven**, not phase-polled like v1:
+  `AcpAgent.on("entry", ...)` over a persistent SSE connection. A
+  Provider is a **long-lived process** holding that connection open —
+  structurally like `live-ping-listener.ts`, not like the request/response
+  free HTTP gateway. No inbound webhook URL needed.
+- **Provider registration is a web dashboard signup**
+  (`app.virtuals.io/acp/new`), required before any SDK call — the
+  README states this as a hard prerequisite, not optional. **Not** a
+  smart-contract call.
+- **Wallets are Privy-managed, not a raw EOA.** The dashboard issues a
+  `walletAddress` + `walletId`; a `signerPrivateKey` is generated
+  separately under the agent's Signers tab and is **not** a
+  `0x`-prefixed hex key like every other secret in this repo — it's a
+  base64 PKCS#8 P-256 "Privy authorization key" (~155 chars, starts
+  `MIGH`). None of the existing viem-based `ChainPort` wallet handling
+  reuses here as-is; a new adapter layer is needed
+  (`PrivyAlchemyEvmProviderAdapter`, per the SDK).
+- **Job lifecycle is real on-chain transactions at every step**
+  (confirmed reading `src/core/operations.ts`'s `CreateJobParams`/
+  `SetBudgetParams`/`FundParams`/`SubmitParams`/`CompleteParams`), not a
+  pure off-chain webhook flow: `job.created` → provider `setBudget()` →
+  client `fund()` (escrows on-chain) → provider `submit(deliverable)` →
+  evaluator `complete()`/`reject()` (releases/returns escrow). Each
+  transition is a real signed tx via the Privy adapter, surfaced as an
+  `entry` SSE event.
+- **Maps onto `handleGatewayQuery` (Direction B — another agent pays
+  Coral), not `handleTokenQuery`.** ACP's Provider role gets paid for a
+  job; that's the same direction as Coral's existing Ping-based gateway
+  mode, not Coral's own outbound SpendGuard-gated spend to Sibyl.
+- **Not yet verified** (next required step before writing a client, per
+  this file's own rule): exact timeout/retry semantics per phase,
+  idempotency guarantees on a dropped `fund()`/`submit()` call (need to
+  read `evmAcpClient.ts`'s actual send/wait logic), whether registration
+  itself costs a fee or requires KYC (gated behind the dashboard, not
+  discoverable from the SDK/README), and the per-job protocol fee
+  schedule.
