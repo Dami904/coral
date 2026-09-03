@@ -23,10 +23,12 @@
     "live:escalation-demo": "tsx scripts/live-escalation-demo.ts",
     "live:escalation-resume-demo": "tsx scripts/live-escalation-resume-demo.ts",
     "live:ping-register": "tsx scripts/live-ping-register.ts",
-    "live:mainnet-smoke": "tsx scripts/live-mainnet-smoke.ts"
+    "live:mainnet-smoke": "tsx scripts/live-mainnet-smoke.ts",
+    "live:acp-provider": "tsx scripts/live-acp-provider.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
+    "@virtuals-protocol/acp-node-v2": "^0.1.12",
     "dotenv": "17.4.2",
     "ping-onchain": "0.1.5",
     "viem": "2.55.19",

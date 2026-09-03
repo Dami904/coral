@@ -1,5 +1,6 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
 import { handleTokenQuery, resumeAfterApproval, type HandleTokenQueryDeps } from "../decisionCore.js";
+import { createKeyedLock } from "../lib/keyedLock.js";
 import type { ResumableChainPort } from "../types.js";
 
 const CONTRACT_RE = /^0x[a-fA-F0-9]{40}$/;
@@ -40,43 +41,11 @@ function readQuery(req: IncomingMessage): URLSearchParams {
   return new URL(req.url ?? "/", "http://localhost").searchParams;
 }
 
-/**
- * Serializes handleTokenQuery calls per contract within this process.
- * Without this, two concurrent /check requests for the same never-cached
- * contract can both pass decisionCore's cache-miss check and both call
- * chain.requestPayment before either result is recorded anywhere — for a
- * contract priced below humanApprovalThreshold that's a genuine double
- * real USDC payment, not just a duplicate escalation proposal. Ping never
- * hit this because pollOnce.ts processes messages one at a time in a
- * plain for-loop; this HTTP server is this codebase's first entry point
- * that can receive two requests for the same contract concurrently.
- *
- * This only serializes within one process — a second live-http-server.ts
- * instance, or this server running alongside the Ping listener, can still
- * race each other. That residual gap is documented in
- * docs/LIMITATIONS.md, not silently assumed away.
- */
-function createContractLock(): <T>(contract: string, fn: () => Promise<T>) => Promise<T> {
-  const tails = new Map<string, Promise<void>>();
-  return (contract, fn) => {
-    const prior = tails.get(contract) ?? Promise.resolve();
-    const result = prior.then(fn, fn);
-    tails.set(
-      contract,
-      result.then(
-        () => undefined,
-        () => undefined,
-      ),
-    );
-    return result;
-  };
-}
-
 async function handleCheck(
   req: IncomingMessage,
   res: ServerResponse,
   deps: HttpGatewayDeps,
-  withContractLock: ReturnType<typeof createContractLock>,
+  withContractLock: ReturnType<typeof createKeyedLock>,
 ): Promise<void> {
   const contract = readQuery(req).get("token")?.toLowerCase();
   if (!contract || !CONTRACT_RE.test(contract)) {
@@ -111,7 +80,7 @@ async function handleResume(
   req: IncomingMessage,
   res: ServerResponse,
   deps: HttpGatewayDeps,
-  withContractLock: ReturnType<typeof createContractLock>,
+  withContractLock: ReturnType<typeof createKeyedLock>,
 ): Promise<void> {
   const query = readQuery(req);
   const contract = query.get("contract")?.toLowerCase();
@@ -143,7 +112,7 @@ async function handleResume(
 }
 
 export function createHttpGatewayListener(deps: HttpGatewayDeps): RequestListener {
-  const withContractLock = createContractLock();
+  const withContractLock = createKeyedLock();
   return (req, res) => {
     void (async () => {
       try {

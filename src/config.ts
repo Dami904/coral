@@ -35,6 +35,24 @@ const envSchema = z.object({
    * Sibyl's real $0.25 price so a cache miss is break-even-or-better and a
    * cache hit is pure margin — see PLAN.md's "Gateway direction" entry. */
   GATEWAY_FEE_USDC_6DP: z.coerce.bigint().default(500_000n),
+
+  /** Virtuals Protocol ACP (Agent Commerce Protocol) — a third "another
+   * agent pays Coral" surface alongside Ping's gateway mode, discovered
+   * through Virtuals' own marketplace instead of Ping's. Only required by
+   * scripts/live-acp-provider.ts, checked there (not here) the same way
+   * DEPLOYER_PRIVATE_KEY is optional at this level and checked by its own
+   * callers — see docs/API_NOTES.md's ACP section. */
+  ACP_WALLET_ADDRESS: hexAddress.optional(),
+  ACP_WALLET_ID: z.string().optional(),
+  /** A Privy "authorization key" (base64 PKCS#8 P-256, ~155 chars, starts
+   * "MIGH") from the agent's Signers tab on the Virtuals dashboard — NOT a
+   * 0x-prefixed EOA hex key like every other private key in this file. */
+  ACP_SIGNER_PRIVATE_KEY: z.string().optional(),
+  /** Must match the offering name registered on the Virtuals dashboard —
+   * read back from the registry at boot (see seller.ts's own pattern in
+   * @virtuals-protocol/acp-node-v2), not hardcoded, but still needed here
+   * to know which offering this process actually serves. */
+  ACP_OFFERING_NAME: z.string().optional(),
 });
 
 function required(value: string | undefined, name: string, network: string): string {
@@ -81,5 +99,9 @@ export function loadConfig() {
     memoryDbPath: env.SIBYL_MEMORY_DB,
     deployerPrivateKey: env.DEPLOYER_PRIVATE_KEY as `0x${string}` | undefined,
     gatewayFeeUsdc6dp: env.GATEWAY_FEE_USDC_6DP,
+    acpWalletAddress: env.ACP_WALLET_ADDRESS as `0x${string}` | undefined,
+    acpWalletId: env.ACP_WALLET_ID,
+    acpSignerPrivateKey: env.ACP_SIGNER_PRIVATE_KEY,
+    acpOfferingName: env.ACP_OFFERING_NAME,
   };
 }

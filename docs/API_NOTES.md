@@ -309,8 +309,65 @@ than skipped.
 ## Virtuals Protocol ACP (Agent Commerce Protocol) — verified 2026-09-03
 
 Researched before writing any client, per this file's own standard.
-Not yet implemented — this section is the pre-work `CLAUDE.md` requires,
-not a claim that Coral has an ACP integration.
+**Implemented** in `src/acp/acpProvider.ts` (pure, unit-tested requirement
+parsing/deliverable formatting) and `scripts/live-acp-provider.ts` (the
+real long-lived Provider process) — see `docs/LIMITATIONS.md`'s ACP
+section for what's still unverified (idempotency on a dropped
+`fund()`/`submit()`, real-counterparty job flow).
+
+Confirmed live: `AcpAgent.create()` successfully authenticates against
+Virtuals' real backend using real dashboard-issued credentials
+(`ACP_WALLET_ADDRESS`/`ACP_WALLET_ID`/`ACP_SIGNER_PRIVATE_KEY`) and reads
+back the agent's own registry entry via `getAgentByWalletAddress` — not
+yet confirmed against a real funded job (no registered offering / real
+counterparty at time of writing).
+
+**A real bug found in the SDK's own published example, live**: `seller.ts`
+(the Provider-side example in `@virtuals-protocol/acp-node-v2`) calls
+`AcpAgent.create({ provider: ... })`, but the actual `createAcpClients`
+function it delegates to destructures `evmProvider`/`solanaProvider` —
+never `provider`. As published, the example throws
+`"At least one provider (evmProvider or solanaProvider) must be
+provided."` at runtime. Confirmed by tracing `clientFactory.ts` directly,
+not by running the example itself. Use `evmProvider:`, not `provider:`.
+
+**A second confirmed unit-conversion trap**: `AssetToken.usdc(amount,
+chainId)` takes `amount` as a human-readable decimal (e.g. `0.5` for
+$0.50) — confirmed reading `assetToken.js`: it feeds straight into
+viem's `parseUnits` with no further scaling, unlike this codebase's own
+`*_USDC_6DP` convention (a raw integer, e.g. `500_000n`). Converting the
+wrong way would set a job's budget a million times too high.
+`src/acp/acpProvider.ts`'s `usdc6dpToDollars` is the one place this
+conversion happens, with a regression test.
+
+**Real early-failure resource leak, found running the actual script**:
+before the fix in `scripts/live-acp-provider.ts`, a thrown error during
+setup (e.g. "offering not found," the exact case that surfaced this) left
+the local mock x402 server and the Sibyl Memory connection open, so the
+process hung indefinitely instead of exiting — confirmed by running it
+for real against live dashboard credentials, not caught by any test.
+Fixed by closing both in a catch block wrapping everything after they're
+opened, before rethrowing.
+
+**A fourth real bug, caught by review before ever running against a real
+job**: an earlier draft used one `PRICE_USDC_6DP` constant for two
+different prices — what Coral pays Sibyl per check, and what an ACP
+buyer pays Coral for the job. Split into `SIBYL_PRICE_USDC_6DP` (fixed,
+matches Sibyl's real price) and the registered offering's own
+`priceValue` (read from the registry, whatever's actually configured on
+the dashboard) — setting a buyer's job budget to Coral's *cost* rather
+than the *dashboard-configured offering price* would have silently
+ignored any price the offering was actually registered at.
+
+**Two real concurrency bugs found by `reliability-auditor`, before any
+real job existed to trigger them**: neither the `job.funded` handler nor
+the resume-poll `setInterval` tick serialized against a duplicate/
+overlapping invocation for the same job — a replayed SSE event, or a
+resume attempt slower than `RESUME_POLL_MS`, could have run
+`handleTokenQuery`/`resumeAfterApproval` + `session.submit()` twice for
+one logical job. Fixed by extracting `httpGatewayServer.ts`'s existing,
+already-tested per-contract lock into `src/lib/keyedLock.ts` and reusing
+it here, keyed by `jobId`, for both paths.
 
 - **Real current package: `@virtuals-protocol/acp-node-v2`** on npm
   (confirmed via `Virtual-Protocol/acp-node-v2` on GitHub, `main`,

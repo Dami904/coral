@@ -151,6 +151,57 @@ own use — see `PLAN.md`'s "Gateway direction" entry for the design.
   but, like the rest of that script, not run — real use needs a real
   gateway-paying counterparty, which doesn't exist yet.
 
+## Gateway (ACP) — Coral as a paid service via Virtuals Protocol
+
+`scripts/live-acp-provider.ts` is a third "another agent pays Coral"
+surface, alongside Ping's gateway mode — discovered through Virtuals'
+own marketplace instead of Ping's. See `docs/API_NOTES.md`'s ACP section
+for the verified SDK facts this was built against.
+
+- **No verified idempotency on `fund()`/`submit()`/`complete()` for EVM.**
+  These all route through the SDK's internal `withReprepare` retry
+  helper, but reading its source shows that's explicitly aimed at a
+  Solana-specific race ("Solana intent PDA... consumed by a concurrent
+  tx"), not a general network-timeout guarantee. Unlike this codebase's
+  own x402 client (single-use tx-hash window) or `PingChainClient`
+  (deliberately never retries a write), there's no confirmed safe-retry
+  story here yet — `live-acp-provider.ts` does not blind-retry a failed
+  `submit()`/`complete()` call, on the same "don't guess at a write's
+  idempotency" principle as everywhere else in this codebase, but that
+  means a dropped connection mid-`submit()` needs a human to check
+  whether it actually landed before deciding to resend.
+- **Same "dangerous ordering" gap as the HTTP gateway and Ping's
+  `finishAfterPayment` path.** If `handleTokenQuery` throws after Coral's
+  own `SpendGuard`-gated payment to Sibyl already went out but before a
+  tier is cached, the ACP job is left funded-but-unsubmitted — logged
+  loudly, not silently retried. The buyer's escrowed funds aren't lost
+  (the job can still resolve on a later manual retry, or expire and
+  refund the buyer per ACP's own deadline handling), but Coral's own
+  Sibyl spend, if it happened, is not recovered by anything in this path.
+- **A pending SpendGuard escalation can lose the race against the ACP
+  job's own deadline.** `runCheck`'s `pending_approval` branch tracks the
+  job for the in-process resume-poll loop (`RESUME_POLL_MS`, mirroring
+  `pollLoop.ts`'s `resumePending` pattern), but if the human approval
+  takes longer than the ACP job's `expiredAt`, the job expires and the
+  buyer's escrow returns to them before Coral ever gets to `submit()` —
+  even though Coral may have already paid Sibyl by then. No coordination
+  between `SpendGuard`'s human-approval threshold and ACP's own job
+  deadline exists today.
+- **Intelligence check points at the local mock, not the real Sibyl
+  endpoint** — same fix and same reason as `live-http-server.ts` (Sibyl's
+  real endpoint only recognizes Base mainnet transactions; `SpendGuard`
+  here runs on Base Sepolia). A "paid"/"cache_hit" deliverable through
+  this path is a real testnet payment resolved against a mock tier, not
+  a real Sibyl evaluation, until this deployment moves to mainnet.
+- **Not yet exercised against a real ACP counterparty.** Verified live
+  only as far as `AcpAgent.create()` successfully authenticating against
+  Virtuals' real backend and reading back the agent's own registry entry
+  — no real buyer has funded a real job yet (needs a registered offering
+  and a counterparty agent, neither in place at time of writing).
+- **In-memory-only job/pending-approval tracking**, same limitation as
+  the Ping poll loop's cursor (see "General" below) — a process restart
+  loses track of any job mid-flight between `job.funded` and `submit()`.
+
 ## General
 
 - **Retry/backoff exists, but only where it's actually safe (`src/lib/retry.ts`).**
