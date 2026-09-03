@@ -37,9 +37,6 @@ fi
 echo "== pnpm (corepack) =="
 corepack enable
 
-echo "== sibyl-memory-mcp (pip install, not the curl|sh one-liner — see CLAUDE.md) =="
-pip3 install --break-system-packages 'sibyl-memory-cli[mcp]'
-
 echo "== service user + directories =="
 # --home-dir points at DATA_DIR (not a separate /home/coral) so pnpm's
 # global store and git's config have somewhere writable — nologin still
@@ -49,6 +46,20 @@ id -u "$SERVICE_USER" >/dev/null 2>&1 || useradd --system --create-home --home-d
 mkdir -p "$APP_DIR" "$CONFIG_DIR"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR" "$DATA_DIR"
 chmod 750 "$CONFIG_DIR"
+
+echo "== sibyl-memory-mcp, in a venv (not --break-system-packages) =="
+# A plain `pip3 install --break-system-packages` fights Ubuntu 24.04's
+# apt-managed Python packages directly (a Debian-installed typing_extensions
+# with no pip RECORD file makes pip's own uninstall-then-reinstall step
+# fail outright) — a venv sidesteps that entirely, and is the more robust
+# choice for a long-running systemd service anyway (isolated deps, not
+# entangled with whatever apt does on a later `apt upgrade`).
+VENV_DIR="$DATA_DIR/venv"
+if [ ! -d "$VENV_DIR" ]; then
+  sudo -u "$SERVICE_USER" python3 -m venv "$VENV_DIR"
+fi
+sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade pip
+sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install 'sibyl-memory-cli[mcp]'
 
 echo "== clone/update the repo =="
 if [ -d "$APP_DIR/.git" ]; then
@@ -89,8 +100,10 @@ cat <<'EOF'
 
 Setup done. Next steps:
   1. Edit /etc/coral/coral.env with real values (AGENT_PRIVATE_KEY, RPC URL,
-     SPEND_GUARD_ADDRESS, VENDOR_PAYTO_ADDRESS, and SIBYL_MEMORY_DB pointed
-     at /var/lib/coral/memory.db) — see docs/DEPLOYMENT.md.
+     SPEND_GUARD_ADDRESS, VENDOR_PAYTO_ADDRESS, SIBYL_MEMORY_DB pointed at
+     /var/lib/coral/memory.db, and SIBYL_MEMORY_MCP_COMMAND set to
+     /var/lib/coral/venv/bin/sibyl-memory-mcp — the venv install, not a
+     bare command name that assumes it's on PATH) — see docs/DEPLOYMENT.md.
   2. sudo systemctl start coral-http-server
      (and coral-ping-listener once you've deliberately decided to register
      on Ping — see scripts/live-ping-register.ts's own warning; that's a

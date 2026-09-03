@@ -72,11 +72,14 @@ Both read secrets from `/etc/coral/coral.env` (never the repo's own
 5. **Fill in `/etc/coral/coral.env`** (copied from `.env.example` by the
    script, mode `600`, owned by the `coral` user). At minimum for the free
    HTTP path on testnet: `AGENT_PRIVATE_KEY`, `BASE_SEPOLIA_RPC_URL`,
-   `SPEND_GUARD_ADDRESS`, `VENDOR_PAYTO_ADDRESS`, and —
-   **important, override the repo default** —
+   `SPEND_GUARD_ADDRESS`, `VENDOR_PAYTO_ADDRESS`, and — **important,
+   override both repo defaults** —
    `SIBYL_MEMORY_DB=/var/lib/coral/memory.db` (not
    `.sibyl-memory-demo/memory.db`, which would resolve relative to
-   `/opt/coral` and get treated as disposable app state, not data).
+   `/opt/coral` and get treated as disposable app state, not data) and
+   `SIBYL_MEMORY_MCP_COMMAND=/var/lib/coral/venv/bin/sibyl-memory-mcp`
+   (the script installs it into a venv, not system-wide, so the bare
+   `sibyl-memory-mcp` default won't be on `PATH`).
 6. **Start it:**
    ```bash
    sudo systemctl start coral-http-server
