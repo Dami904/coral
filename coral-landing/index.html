@@ -401,7 +401,7 @@
       <div class="hero-facts">
         <span><b>Base Sepolia</b> &middot; SpendGuard deployed and paying live</span>
         <span><b>4</b> fixed-order on-chain policy rules</span>
-        <span><b>98</b> tests passing, zero mocked chain calls</span>
+        <span><b>129</b> tests passing, zero mocked chain calls</span>
       </div>
     </div>
   </section>
@@ -556,8 +556,8 @@
           <div class="body">
             <div class="cmd-line"><span class="prompt">~/coral</span><span class="cmd">pnpm test</span></div>
             <span class="fade">RUN v4.1.11</span>
-            <div class="row"><span class="k">Test Files</span><span class="v">9 passed (9)</span></div>
-            <div class="row"><span class="k">Tests</span><span class="v">98 passed (98)</span></div>
+            <div class="row"><span class="k">Test Files</span><span class="v">10 passed (10)</span></div>
+            <div class="row"><span class="k">Tests</span><span class="v">129 passed (129)</span></div>
 
             <div class="cmd-line"><span class="prompt">~/coral</span><span class="cmd">forge test</span></div>
             <span class="fade">Ran 2 test suites</span>
@@ -608,6 +608,11 @@
           <thead><tr><th>Piece</th><th>Status</th><th>Detail</th></tr></thead>
           <tbody>
             <tr>
+              <td>Free HTTP gateway</td>
+              <td><span class="status live"><svg class="icon" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Live</span></td>
+              <td>Deployed continuously on AWS EC2, not just recorded for a demo — <code>GET /check</code> is the same widget you can try above, reachable directly at <code>https://3-216-178-169.nip.io</code>.</td>
+            </tr>
+            <tr>
               <td>Sibyl Memory</td>
               <td><span class="status live"><svg class="icon" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Live</span></td>
               <td>Real <code>sibyl-memory-mcp</code> server over stdio, real SQLite file, deletion-tested against the deployed contract.</td>
@@ -633,9 +638,9 @@
               <td>Deploy script written and dry-run against a local fork. Not broadcast: real funds, held for a deliberate go-ahead.</td>
             </tr>
             <tr>
-              <td>Gateway mode</td>
+              <td>Gateway mode <span style="color:var(--muted); font-weight:400;">(paid, via Ping)</span></td>
               <td><span class="status staged"><svg class="icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v3l2 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Staged</span></td>
-              <td>Payment verification and the replay ledger are unit-tested against decoded receipts. Not yet exercised against a real paying counterparty.</td>
+              <td>Not the free HTTP check above — this is the mirror case where <em>another agent pays Coral</em> over Ping. Payment verification and the replay ledger are unit-tested against decoded receipts. Not yet exercised against a real paying counterparty.</td>
             </tr>
           </tbody>
         </table>
@@ -663,8 +668,8 @@
           <p>The mandatory gate this whole build is judged on: a local, queryable cache reached over the standard MCP interface.</p>
         </div>
         <div class="stack-card">
-          <h3>Gateway mode</h3>
-          <p>The mirror case: other agents pay Coral, over Ping, for the same lookup. Payment is verified from the mined receipt, never trusted on claim, and redeemable exactly once.</p>
+          <h3>Gateway mode <span style="color:var(--muted); font-weight:400; font-size:13px;">(paid, via Ping)</span></h3>
+          <p>The mirror case: other agents pay Coral, over Ping, for the same lookup — distinct from the free HTTP check above. Payment is verified from the mined receipt, never trusted on claim, and redeemable exactly once.</p>
         </div>
       </div>
     </div>
