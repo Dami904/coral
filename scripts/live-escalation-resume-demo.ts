@@ -10,17 +10,17 @@
  *
  * Run: pnpm live:escalation-resume-demo
  */
-import { createServer } from "node:http";
-import { unlinkSync, existsSync } from "node:fs";
-import { createPublicClient, createWalletClient, http, parseEventLogs } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { loadConfig } from "../src/config.js";
 import { handleTokenQuery, resumeAfterApproval } from "../src/decisionCore.js";
-import { SpendGuardChainClient, SPEND_GUARD_ABI } from "../src/chain/spendGuardClient.js";
-import { SibylMemoryClient } from "../src/memory/sibylMemoryClient.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
-import { requestHandler } from "../mock-x402-server/server.mjs";
-import { withRetry } from "../src/lib/retry.js";
+import {
+  makeChainClient,
+  makeMemoryClient,
+  makeOwnerClients,
+  ownerApproveAndWait,
+  resetMemoryDb,
+  startMockX402Server,
+} from "./lib/liveHarness.js";
 
 const TEST_CONTRACT = "0x000000000000000000000000000000c0ffee04";
 // Between the deployed guard's humanApprovalThreshold (150_000) and
@@ -29,33 +29,16 @@ const ESCALATION_AMOUNT_USDC_6DP = 200_000n;
 
 async function main() {
   const config = loadConfig();
-  if (!config.deployerPrivateKey) {
-    throw new Error("DEPLOYER_PRIVATE_KEY required (owner key — only it can call ownerApprove)");
-  }
+  const ownerClients = makeOwnerClients(config);
 
-  const mockServer = createServer(requestHandler);
-  await new Promise<void>((resolve) => mockServer.listen(0, resolve));
-  const address = mockServer.address();
-  if (address === null || typeof address === "string") throw new Error("expected a TCP address");
-  const mockEndpoint = `http://127.0.0.1:${address.port}/api/evaluate`;
-  console.log(`[escalation-resume] local mock x402 server listening at ${mockEndpoint}`);
+  const mockServer = await startMockX402Server();
+  console.log(`[escalation-resume] local mock x402 server listening at ${mockServer.endpoint}`);
 
-  if (config.memoryDbPath && existsSync(config.memoryDbPath)) {
-    unlinkSync(config.memoryDbPath);
-    console.log(`[escalation-resume] deleted pre-existing ${config.memoryDbPath} for a clean run`);
-  }
+  resetMemoryDb(config, "escalation-resume");
 
-  const chain = new SpendGuardChainClient({
-    rpcUrl: config.rpcUrl,
-    guardAddress: config.guardAddress,
-    agentPrivateKey: config.agentPrivateKey,
-    chain: config.chain,
-  });
-  const memory = new SibylMemoryClient({
-    command: config.memoryMcpCommand,
-    ...(config.memoryDbPath ? { env: { ...process.env, SIBYL_MEMORY_DB: config.memoryDbPath } } : {}),
-  });
-  const intelligence = new X402IntelligenceClient({ endpointUrl: mockEndpoint });
+  const chain = makeChainClient(config);
+  const memory = makeMemoryClient(config);
+  const intelligence = new X402IntelligenceClient({ endpointUrl: mockServer.endpoint });
 
   const deps = {
     memory,
@@ -80,32 +63,11 @@ async function main() {
     console.log("[escalation-resume] no funds moved yet, no intelligence call yet — the agent proposed, it did not execute.");
 
     console.log(`[escalation-resume] owner approving requestId ${first.requestId.toString()}...`);
-    const publicClient = createPublicClient({ chain: config.chain, transport: http(config.rpcUrl) });
-    const ownerAccount = privateKeyToAccount(config.deployerPrivateKey);
-    const ownerWallet = createWalletClient({ account: ownerAccount, chain: config.chain, transport: http(config.rpcUrl) });
-    // Same class of issue as the Day 8 stale-read bug (docs/API_NOTES.md):
-    // viem's writeContract does an eth_call-based gas estimate before
-    // broadcasting, and Base Sepolia's public multi-node RPC can route that
-    // estimate to a node that hasn't yet seen the block this request was
-    // JUST created in. Retry the whole call rather than assume a revert
-    // here means the request is genuinely invalid.
-    const approveTxHash = await withRetry(
-      () =>
-        ownerWallet.writeContract({
-          address: config.guardAddress,
-          abi: SPEND_GUARD_ABI,
-          functionName: "ownerApprove",
-          args: [first.requestId],
-          chain: config.chain,
-          account: ownerAccount,
-        }),
-      { maxAttempts: 5, baseDelayMs: 2000, isRetryable: () => true },
+    const { txHash: approveTxHash, events: approveEvents } = await ownerApproveAndWait(
+      config,
+      ownerClients,
+      first.requestId,
     );
-    const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-    if (approveReceipt.status !== "success") {
-      throw new Error(`ownerApprove tx ${approveTxHash} reverted (status=${approveReceipt.status})`);
-    }
-    const approveEvents = parseEventLogs({ abi: SPEND_GUARD_ABI, logs: approveReceipt.logs });
     if (!approveEvents.some((e) => e.eventName === "PaymentApproved")) {
       throw new Error(`ownerApprove tx ${approveTxHash} did not emit PaymentApproved: ${JSON.stringify(approveEvents)}`);
     }
@@ -150,7 +112,7 @@ async function main() {
     );
   } finally {
     await memory.close();
-    await new Promise<void>((resolve, reject) => mockServer.close((err) => (err ? reject(err) : resolve())));
+    await mockServer.close();
   }
 }
 

@@ -22,11 +22,8 @@
  *
  * Run: pnpm live:escalation-demo
  */
-import { createPublicClient, createWalletClient, http, parseEventLogs } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { loadConfig } from "../src/config.js";
-import { SpendGuardChainClient, SPEND_GUARD_ABI } from "../src/chain/spendGuardClient.js";
-import { withRetry } from "../src/lib/retry.js";
+import { makeChainClient, makeOwnerClients, ownerApproveAndWait } from "./lib/liveHarness.js";
 
 // Between the deployed guard's humanApprovalThreshold (150_000) and
 // maxPerPayment (500_000) — see PLAN.md's Day 2 entry.
@@ -34,20 +31,8 @@ const ESCALATION_AMOUNT_USDC_6DP = 200_000n;
 
 async function main() {
   const config = loadConfig();
-  if (!config.deployerPrivateKey) {
-    throw new Error("DEPLOYER_PRIVATE_KEY required (owner key — only it can call ownerApprove)");
-  }
-
-  const publicClient = createPublicClient({ chain: config.chain, transport: http(config.rpcUrl) });
-  const ownerAccount = privateKeyToAccount(config.deployerPrivateKey);
-  const ownerWallet = createWalletClient({ account: ownerAccount, chain: config.chain, transport: http(config.rpcUrl) });
-
-  const agentChain = new SpendGuardChainClient({
-    rpcUrl: config.rpcUrl,
-    guardAddress: config.guardAddress,
-    agentPrivateKey: config.agentPrivateKey,
-    chain: config.chain,
-  });
+  const ownerClients = makeOwnerClients(config);
+  const agentChain = makeChainClient(config);
 
   console.log(`[escalation] agent requests ${ESCALATION_AMOUNT_USDC_6DP.toString()} (above threshold) to ${config.vendorPayTo}`);
   const outcome = await agentChain.requestPayment(config.vendorPayTo, ESCALATION_AMOUNT_USDC_6DP);
@@ -60,32 +45,7 @@ async function main() {
   console.log(`[escalation] no funds moved yet — this is the point: the agent proposed, it did not execute.`);
 
   console.log(`[escalation] owner approving requestId ${outcome.requestId.toString()}...`);
-  // Same class of issue as the Day 8 stale-read bug above: viem's
-  // writeContract does an eth_call-based gas estimate before broadcasting,
-  // and Base Sepolia's public multi-node RPC can route that estimate to a
-  // node that hasn't yet seen the block this request was JUST created in
-  // (verified live — a fresh request can revert "invalid request" on the
-  // very first attempt for exactly this reason, no real tx ever broadcasts
-  // in that case). Retry the whole call rather than assume a revert here
-  // means the request is genuinely invalid.
-  const approveTxHash = await withRetry(
-    () =>
-      ownerWallet.writeContract({
-        address: config.guardAddress,
-        abi: SPEND_GUARD_ABI,
-        functionName: "ownerApprove",
-        args: [outcome.requestId],
-        chain: config.chain,
-        account: ownerAccount,
-      }),
-    { maxAttempts: 5, baseDelayMs: 2000, isRetryable: () => true },
-  );
-  const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-  if (approveReceipt.status !== "success") {
-    throw new Error(`ownerApprove tx ${approveTxHash} reverted (status=${approveReceipt.status})`);
-  }
-
-  const events = parseEventLogs({ abi: SPEND_GUARD_ABI, logs: approveReceipt.logs });
+  const { txHash: approveTxHash, events } = await ownerApproveAndWait(config, ownerClients, outcome.requestId);
   const approved = events.find((e) => e.eventName === "PaymentApproved");
   const sent = events.find((e) => e.eventName === "PaymentSent");
   if (!approved || !sent) {

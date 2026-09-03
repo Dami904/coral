@@ -15,14 +15,10 @@
  *
  * Run: NETWORK=mainnet MAINNET_SMOKE_TEST_TOKEN=0x... pnpm live:mainnet-smoke
  */
-import { unlinkSync, existsSync } from "node:fs";
-import { createPublicClient, createWalletClient, http, parseEventLogs } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
 import { loadConfig } from "../src/config.js";
 import { handleTokenQuery, resumeAfterApproval } from "../src/decisionCore.js";
-import { SpendGuardChainClient, SPEND_GUARD_ABI } from "../src/chain/spendGuardClient.js";
-import { SibylMemoryClient } from "../src/memory/sibylMemoryClient.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
+import { makeChainClient, makeMemoryClient, makeOwnerClients, ownerApproveAndWait, resetMemoryDb } from "./lib/liveHarness.js";
 
 const REAL_PRICE_USDC_6DP = 250_000n; // confirmed live, docs/API_NOTES.md
 
@@ -31,29 +27,16 @@ async function main() {
   if (config.network !== "mainnet") {
     throw new Error("set NETWORK=mainnet before running this — refusing to run a mainnet smoke test against testnet config");
   }
-  if (!config.deployerPrivateKey) {
-    throw new Error("DEPLOYER_PRIVATE_KEY required (owner key — only it can call ownerApprove)");
-  }
+  const ownerClients = makeOwnerClients(config);
   const contract = process.env["MAINNET_SMOKE_TEST_TOKEN"];
   if (!contract) {
     throw new Error("MAINNET_SMOKE_TEST_TOKEN required — a real ERC-20 contract address on Base to evaluate");
   }
 
-  if (config.memoryDbPath && existsSync(config.memoryDbPath)) {
-    unlinkSync(config.memoryDbPath);
-    console.log(`[mainnet-smoke] deleted pre-existing ${config.memoryDbPath} for a clean run`);
-  }
+  resetMemoryDb(config, "mainnet-smoke");
 
-  const chain = new SpendGuardChainClient({
-    rpcUrl: config.rpcUrl,
-    guardAddress: config.guardAddress,
-    agentPrivateKey: config.agentPrivateKey,
-    chain: config.chain,
-  });
-  const memory = new SibylMemoryClient({
-    command: config.memoryMcpCommand,
-    ...(config.memoryDbPath ? { env: { ...process.env, SIBYL_MEMORY_DB: config.memoryDbPath } } : {}),
-  });
+  const chain = makeChainClient(config);
+  const memory = makeMemoryClient(config);
   const intelligence = new X402IntelligenceClient({ endpointUrl: "https://sibylcap.com/api/evaluate" });
 
   const deps = {
@@ -77,22 +60,11 @@ async function main() {
       console.log(
         `[mainnet-smoke] escalated as expected (threshold below the real price) — owner approving requestId ${first.requestId.toString()}...`,
       );
-      const publicClient = createPublicClient({ chain: config.chain, transport: http(config.rpcUrl) });
-      const ownerAccount = privateKeyToAccount(config.deployerPrivateKey);
-      const ownerWallet = createWalletClient({ account: ownerAccount, chain: config.chain, transport: http(config.rpcUrl) });
-      const approveTxHash = await ownerWallet.writeContract({
-        address: config.guardAddress,
-        abi: SPEND_GUARD_ABI,
-        functionName: "ownerApprove",
-        args: [first.requestId],
-        chain: config.chain,
-        account: ownerAccount,
-      });
-      const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-      if (approveReceipt.status !== "success") {
-        throw new Error(`ownerApprove tx ${approveTxHash} reverted (status=${approveReceipt.status})`);
-      }
-      const approveEvents = parseEventLogs({ abi: SPEND_GUARD_ABI, logs: approveReceipt.logs });
+      const { txHash: approveTxHash, events: approveEvents } = await ownerApproveAndWait(
+        config,
+        ownerClients,
+        first.requestId,
+      );
       if (!approveEvents.some((e) => e.eventName === "PaymentApproved")) {
         throw new Error(`ownerApprove tx ${approveTxHash} did not emit PaymentApproved`);
       }

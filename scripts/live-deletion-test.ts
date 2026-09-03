@@ -11,23 +11,13 @@
  *
  * Run: pnpm live:deletion-test
  */
-import { unlinkSync, existsSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { loadConfig } from "../src/config.js";
 import { handleTokenQuery, type HandleTokenQueryDeps } from "../src/decisionCore.js";
-import { SpendGuardChainClient } from "../src/chain/spendGuardClient.js";
-import { SibylMemoryClient } from "../src/memory/sibylMemoryClient.js";
 import { StubIntelligenceClient } from "../src/intelligence/stubIntelligenceClient.js";
+import { makeChainClient, makeMemoryClient, resetMemoryDb } from "./lib/liveHarness.js";
 
 const TEST_CONTRACT = "0x000000000000000000000000000000c0ffee03";
-
-function makeMemory(config: ReturnType<typeof loadConfig>): SibylMemoryClient {
-  return new SibylMemoryClient({
-    command: config.memoryMcpCommand,
-    ...(config.memoryDbPath
-      ? { env: { ...process.env, SIBYL_MEMORY_DB: config.memoryDbPath } }
-      : {}),
-  });
-}
 
 async function main() {
   const config = loadConfig();
@@ -37,17 +27,9 @@ async function main() {
     );
   }
 
-  if (existsSync(config.memoryDbPath)) {
-    unlinkSync(config.memoryDbPath);
-    console.log(`[deletion-test] deleted pre-existing ${config.memoryDbPath} for a clean run`);
-  }
+  resetMemoryDb(config, "deletion-test");
 
-  const chain = new SpendGuardChainClient({
-    rpcUrl: config.rpcUrl,
-    guardAddress: config.guardAddress,
-    agentPrivateKey: config.agentPrivateKey,
-    chain: config.chain,
-  });
+  const chain = makeChainClient(config);
   const intelligence = new StubIntelligenceClient();
   const commonDeps: Omit<HandleTokenQueryDeps, "memory"> = {
     chain,
@@ -57,7 +39,7 @@ async function main() {
     staleWindowMs: 60 * 60 * 1000,
   };
 
-  let memory = makeMemory(config);
+  let memory = makeMemoryClient(config);
 
   console.log(`[deletion-test] call 1 (expect miss -> real payment) for ${TEST_CONTRACT}`);
   const first = await handleTokenQuery(TEST_CONTRACT, { ...commonDeps, memory });
@@ -73,7 +55,7 @@ async function main() {
   console.log(`[deletion-test] deleting ${config.memoryDbPath} live...`);
   unlinkSync(config.memoryDbPath);
 
-  memory = makeMemory(config);
+  memory = makeMemoryClient(config);
   console.log(`[deletion-test] call 3, same contract, AFTER deletion (expect miss -> real payment again) for ${TEST_CONTRACT}`);
   const third = await handleTokenQuery(TEST_CONTRACT, { ...commonDeps, memory });
   console.log("[deletion-test] result 3:", third);

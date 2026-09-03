@@ -10,45 +10,24 @@
  *
  * Run: pnpm live:day5-smoke
  */
-import { createServer } from "node:http";
-import { unlinkSync, existsSync } from "node:fs";
 import { loadConfig } from "../src/config.js";
 import { handleTokenQuery } from "../src/decisionCore.js";
-import { SpendGuardChainClient } from "../src/chain/spendGuardClient.js";
-import { SibylMemoryClient } from "../src/memory/sibylMemoryClient.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
-import { requestHandler } from "../mock-x402-server/server.mjs";
+import { makeChainClient, makeMemoryClient, resetMemoryDb, startMockX402Server } from "./lib/liveHarness.js";
 
 const TEST_CONTRACT = "0x000000000000000000000000000000c0ffee02";
 
 async function main() {
   const config = loadConfig();
 
-  const mockServer = createServer(requestHandler);
-  await new Promise<void>((resolve) => mockServer.listen(0, resolve));
-  const address = mockServer.address();
-  if (address === null || typeof address === "string") throw new Error("expected a TCP address");
-  const mockEndpoint = `http://127.0.0.1:${address.port}/api/evaluate`;
-  console.log(`[smoke] local mock x402 server listening at ${mockEndpoint}`);
+  const mockServer = await startMockX402Server();
+  console.log(`[smoke] local mock x402 server listening at ${mockServer.endpoint}`);
 
-  if (config.memoryDbPath && existsSync(config.memoryDbPath)) {
-    unlinkSync(config.memoryDbPath);
-    console.log(`[smoke] deleted pre-existing ${config.memoryDbPath} for a clean run`);
-  }
+  resetMemoryDb(config, "smoke");
 
-  const chain = new SpendGuardChainClient({
-    rpcUrl: config.rpcUrl,
-    guardAddress: config.guardAddress,
-    agentPrivateKey: config.agentPrivateKey,
-    chain: config.chain,
-  });
-  const memory = new SibylMemoryClient({
-    command: config.memoryMcpCommand,
-    ...(config.memoryDbPath
-      ? { env: { ...process.env, SIBYL_MEMORY_DB: config.memoryDbPath } }
-      : {}),
-  });
-  const intelligence = new X402IntelligenceClient({ endpointUrl: mockEndpoint });
+  const chain = makeChainClient(config);
+  const memory = makeMemoryClient(config);
+  const intelligence = new X402IntelligenceClient({ endpointUrl: mockServer.endpoint });
 
   const deps = {
     memory,
@@ -77,7 +56,7 @@ async function main() {
     console.log("[smoke] PASS: real SpendGuard payment -> real directTx/X-PAYMENT-TX HTTP relay -> real MCP cache, wired end-to-end");
   } finally {
     await memory.close();
-    await new Promise<void>((resolve, reject) => mockServer.close((err) => (err ? reject(err) : resolve())));
+    await mockServer.close();
   }
 }
 

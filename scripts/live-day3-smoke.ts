@@ -6,12 +6,10 @@
  *
  * Run: pnpm live:day3-smoke
  */
-import { unlinkSync, existsSync } from "node:fs";
 import { loadConfig } from "../src/config.js";
 import { handleTokenQuery } from "../src/decisionCore.js";
-import { SpendGuardChainClient } from "../src/chain/spendGuardClient.js";
-import { SibylMemoryClient } from "../src/memory/sibylMemoryClient.js";
 import { StubIntelligenceClient } from "../src/intelligence/stubIntelligenceClient.js";
+import { makeChainClient, makeMemoryClient, resetMemoryDb } from "./lib/liveHarness.js";
 
 const TEST_CONTRACT = "0x000000000000000000000000000000c0ffee01";
 
@@ -21,23 +19,10 @@ async function main() {
   // Deterministic first-call-is-a-miss demo run: start from a clean local
   // DB every time this script runs, same file the deletion-test gate
   // targets in the real demo (docs/API_NOTES.md).
-  if (config.memoryDbPath && existsSync(config.memoryDbPath)) {
-    unlinkSync(config.memoryDbPath);
-    console.log(`[smoke] deleted pre-existing ${config.memoryDbPath} for a clean run`);
-  }
+  resetMemoryDb(config, "smoke");
 
-  const chain = new SpendGuardChainClient({
-    rpcUrl: config.rpcUrl,
-    guardAddress: config.guardAddress,
-    agentPrivateKey: config.agentPrivateKey,
-    chain: config.chain,
-  });
-  const memory = new SibylMemoryClient({
-    command: config.memoryMcpCommand,
-    ...(config.memoryDbPath
-      ? { env: { ...process.env, SIBYL_MEMORY_DB: config.memoryDbPath } }
-      : {}),
-  });
+  const chain = makeChainClient(config);
+  const memory = makeMemoryClient(config);
   const intelligence = new StubIntelligenceClient();
 
   const deps = {
