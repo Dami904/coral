@@ -1,0 +1,23 @@
+[Unit]
+Description=Coral - Ping poll loop (Direction A/B decision core over Ping)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=coral
+WorkingDirectory=/opt/coral
+EnvironmentFile=/etc/coral/coral.env
+ExecStart=/usr/bin/pnpm live:ping-listener
+Restart=on-failure
+RestartSec=5
+# Ping is mainnet-only and this process holds AGENT_PRIVATE_KEY in its
+# environment — keep it off any inbound network surface (no ports opened
+# in the firewall for this unit) and run it as the unprivileged `coral`
+# user, not root.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/coral
+
+[Install]
+WantedBy=multi-user.target

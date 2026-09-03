@@ -152,6 +152,11 @@ never runs as part of the default test suite — see the `scripts` block in
 - [`docs/API_NOTES.md`](docs/API_NOTES.md) — measured behavior of every
   external integration (Sibyl Memory MCP, the chain RPC, x402, Ping),
   written from what was actually reproduced, not assumed.
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — running Coral continuously
+  (not just a local demo recording) on a persistent-disk VM (AWS Lightsail/
+  EC2, or any Ubuntu box) — why an ephemeral-filesystem PaaS breaks the
+  memory-persistence invariant this project is judged on, and the
+  `systemd`-based setup in `deploy/`.
 - [`PLAN.md`](PLAN.md) — the full running design log: architecture,
   verified facts, demo script, and day-by-day build history.
 

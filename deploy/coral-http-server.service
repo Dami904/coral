@@ -1,0 +1,20 @@
+[Unit]
+Description=Coral - free HTTP gateway (src/http/httpGatewayServer.ts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=coral
+WorkingDirectory=/opt/coral
+EnvironmentFile=/etc/coral/coral.env
+Environment=HTTP_PORT=8787
+ExecStart=/usr/bin/pnpm live:http-server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/coral
+
+[Install]
+WantedBy=multi-user.target
