@@ -9,6 +9,19 @@
  * so it's safe to run for real verification the same way the other
  * live:* smoke tests are, not gated behind a special go-ahead.
  *
+ * Intelligence check points at the in-process local mock x402 server, not
+ * the real https://sibylcap.com/api/evaluate — same as every other
+ * live:* script (live-day5-smoke.ts, live-escalation-resume-demo.ts,
+ * etc.), and for the same reason: SpendGuard here is deployed on Base
+ * Sepolia, and Sibyl's real endpoint only recognizes Base *mainnet*
+ * transactions. Pointing this script at the real endpoint (the original
+ * version of this file did) meant an approved, on-chain-paid escalation
+ * could never actually resolve — "transaction not found. it may still be
+ * confirming" forever, since the tx genuinely doesn't exist on the chain
+ * Sibyl checks. Confirmed live: a real ownerApprove + real USDC transfer,
+ * then 5 retries over 45s against the real endpoint, same error every
+ * time. See docs/API_NOTES.md and docs/LIMITATIONS.md.
+ *
  * Run: pnpm live:http-server
  * Then: curl http://127.0.0.1:8787/health
  *       curl "http://127.0.0.1:8787/check?token=0x..."
@@ -17,7 +30,7 @@ import { createServer } from "node:http";
 import { loadConfig } from "../src/config.js";
 import { createHttpGatewayListener } from "../src/http/httpGatewayServer.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
-import { makeChainClient, makeMemoryClient } from "./lib/liveHarness.js";
+import { makeChainClient, makeMemoryClient, startMockX402Server } from "./lib/liveHarness.js";
 
 const PORT = Number(process.env["HTTP_PORT"] ?? 8787);
 const PRICE_USDC_6DP = 250_000n; // matches the real /api/evaluate price
@@ -27,7 +40,9 @@ async function main() {
 
   const chain = makeChainClient(config);
   const memory = makeMemoryClient(config);
-  const intelligence = new X402IntelligenceClient({ endpointUrl: "https://sibylcap.com/api/evaluate" });
+  const mockServer = await startMockX402Server();
+  console.log(`[http-server] local mock x402 server listening at ${mockServer.endpoint}`);
+  const intelligence = new X402IntelligenceClient({ endpointUrl: mockServer.endpoint });
 
   const server = createServer(
     createHttpGatewayListener({
@@ -46,7 +61,7 @@ async function main() {
   const shutdown = () => {
     console.log("[http-server] shutting down...");
     server.close(() => {
-      void memory.close().finally(() => process.exit(0));
+      void Promise.allSettled([memory.close(), mockServer.close()]).finally(() => process.exit(0));
     });
   };
   process.on("SIGINT", shutdown);

@@ -79,6 +79,20 @@ requests exists yet, mirroring the same deliberate choice not to widen
   test (real USDC to Sibyl's production `payTo`) is deliberately not done
   pending explicit go-ahead. The 120-second `directTx` window's real-world
   behavior is therefore still unverified in practice.
+- **The real `/api/evaluate` endpoint can't verify a testnet payment —
+  confirmed live, not assumed.** `scripts/live-http-server.ts` originally
+  pointed its intelligence check at `https://sibylcap.com/api/evaluate`
+  while `SpendGuard` runs on Base Sepolia. A real `ownerApprove` +
+  confirmed on-chain USDC transfer still got `"transaction not found. it
+  may still be confirming"` from Sibyl's endpoint on every one of 5
+  retries over 45 seconds — Sibyl's real backend evidently only indexes
+  Base *mainnet* transactions, so a Sepolia tx hash can never resolve
+  there, no matter how long you wait. Fixed by pointing the free HTTP
+  gateway at the local mock x402 server instead, matching every other
+  `live:*` script's already-established pattern. This means the free
+  gateway's "paid" outcome is only ever a mock tier today; only the
+  not-yet-executed real mainnet smoke test (above) would exercise the
+  real endpoint for a payment that could actually resolve.
 
 ## Ping
 
