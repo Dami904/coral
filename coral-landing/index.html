@@ -292,8 +292,9 @@
   .status.staged { color: var(--wait); }
   .table-scroll { overflow-x: auto; }
 
-  .stack-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  @media (max-width: 780px) { .stack-grid { grid-template-columns: 1fr; } }
+  .stack-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  @media (max-width: 1000px) { .stack-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .stack-grid { grid-template-columns: 1fr; } }
   .stack-card { border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
   .stack-card h3 { font-size: 16px; margin-bottom: 8px; }
   .stack-card p { color: var(--muted); font-size: 14px; margin: 0; }
@@ -358,7 +359,7 @@
       <div class="hero-facts">
         <span><b>Base Sepolia</b> &middot; SpendGuard deployed and paying live</span>
         <span><b>4</b> fixed-order on-chain policy rules</span>
-        <span><b>67</b> tests passing, zero mocked chain calls</span>
+        <span><b>98</b> tests passing, zero mocked chain calls</span>
       </div>
     </div>
   </section>
@@ -491,8 +492,8 @@
           <div class="body">
             <div class="cmd-line"><span class="prompt">~/coral</span><span class="cmd">pnpm test</span></div>
             <span class="fade">RUN v4.1.11</span>
-            <div class="row"><span class="k">Test Files</span><span class="v">8 passed (8)</span></div>
-            <div class="row"><span class="k">Tests</span><span class="v">67 passed (67)</span></div>
+            <div class="row"><span class="k">Test Files</span><span class="v">9 passed (9)</span></div>
+            <div class="row"><span class="k">Tests</span><span class="v">98 passed (98)</span></div>
 
             <div class="cmd-line"><span class="prompt">~/coral</span><span class="cmd">forge test</span></div>
             <span class="fade">Ran 2 test suites</span>
@@ -567,6 +568,11 @@
               <td><span class="status staged"><svg class="icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v3l2 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Staged</span></td>
               <td>Deploy script written and dry-run against a local fork. Not broadcast: real funds, held for a deliberate go-ahead.</td>
             </tr>
+            <tr>
+              <td>Gateway mode</td>
+              <td><span class="status staged"><svg class="icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v3l2 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Staged</span></td>
+              <td>Payment verification and the replay ledger are unit-tested against decoded receipts. Not yet exercised against a real paying counterparty.</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -577,7 +583,7 @@
     <div class="wrap">
       <div class="section-head" data-reveal>
         <span class="eyebrow">Partner stacks</span>
-        <h2 class="kicker">Two Base-ecosystem integrations, both doing real work.</h2>
+        <h2 class="kicker">Base-ecosystem integrations, each doing real work.</h2>
       </div>
       <div class="stack-grid" data-reveal>
         <div class="stack-card">
@@ -591,6 +597,10 @@
         <div class="stack-card">
           <h3>Sibyl Memory</h3>
           <p>The mandatory gate this whole build is judged on: a local, queryable cache reached over the standard MCP interface.</p>
+        </div>
+        <div class="stack-card">
+          <h3>Gateway mode</h3>
+          <p>The mirror case: other agents pay Coral, over Ping, for the same lookup. Payment is verified from the mined receipt, never trusted on claim, and redeemable exactly once.</p>
         </div>
       </div>
     </div>
