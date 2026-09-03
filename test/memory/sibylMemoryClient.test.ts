@@ -201,4 +201,103 @@ describe("SibylMemoryClient", () => {
       ).rejects.toBeInstanceOf(MemoryToolRejectedError);
     });
   });
+
+  describe("getPendingEscalation", () => {
+    it("returns the parsed requestId/fromBlock as bigints on a successful recall", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ entity: { body: { requestId: "42", fromBlock: "1000" } } }));
+      const client = new SibylMemoryClient();
+      const result = await client.getPendingEscalation(CONTRACT);
+      expect(result).toEqual({ requestId: 42n, fromBlock: 1000n });
+    });
+
+    it("returns null on a NOT_FOUND rejection, without retrying", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ code: "NOT_FOUND" }, true));
+      const client = new SibylMemoryClient();
+      expect(await client.getPendingEscalation(CONTRACT)).toBeNull();
+      expect(callToolMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("throws MemoryToolRejectedError on a real (non-NOT_FOUND) rejection", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ code: "VALIDATION_ERROR" }, true));
+      const client = new SibylMemoryClient();
+      await expect(client.getPendingEscalation(CONTRACT)).rejects.toBeInstanceOf(MemoryToolRejectedError);
+    });
+
+    it("retries a transport-level failure", async () => {
+      callToolMock
+        .mockRejectedValueOnce(new Error("stdio pipe closed"))
+        .mockResolvedValueOnce(textResult({ entity: { body: { requestId: "1", fromBlock: "2" } } }));
+      const client = new SibylMemoryClient();
+      expect(await client.getPendingEscalation(CONTRACT)).toEqual({ requestId: 1n, fromBlock: 2n });
+      expect(callToolMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("setPendingEscalation", () => {
+    it("writes successfully on the first attempt, serializing bigints as strings", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ ok: true }));
+      const client = new SibylMemoryClient();
+      await client.setPendingEscalation(CONTRACT, 42n, 1000n);
+      expect(callToolMock).toHaveBeenCalledTimes(1);
+      const [sentCall] = callToolMock.mock.calls as [{ name: string; arguments: { body: unknown } }][];
+      expect(sentCall?.[0].name).toBe("memory_remember");
+      expect(sentCall?.[0].arguments.body).toEqual({ requestId: "42", fromBlock: "1000" });
+    });
+
+    it("throws MemoryToolRejectedError immediately on a real rejection — no reconcile re-read", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ code: "CAP_EXCEEDED" }, true));
+      const client = new SibylMemoryClient();
+      await expect(client.setPendingEscalation(CONTRACT, 42n, 1000n)).rejects.toBeInstanceOf(MemoryToolRejectedError);
+      expect(callToolMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("on a transport-level failure, re-reads first: if the write already landed, does not blindly resend", async () => {
+      callToolMock
+        .mockRejectedValueOnce(new Error("pipe broke mid-write"))
+        .mockResolvedValueOnce(textResult({ entity: { body: { requestId: "42", fromBlock: "1000" } } }));
+      const client = new SibylMemoryClient();
+      await client.setPendingEscalation(CONTRACT, 42n, 1000n);
+      expect(callToolMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("on a transport-level failure, resends once the reconcile re-read confirms it's still missing", async () => {
+      callToolMock
+        .mockRejectedValueOnce(new Error("pipe broke mid-write"))
+        .mockResolvedValueOnce(textResult({ code: "NOT_FOUND" }, true))
+        .mockResolvedValueOnce(textResult({ ok: true }));
+      const client = new SibylMemoryClient();
+      await client.setPendingEscalation(CONTRACT, 42n, 1000n);
+      expect(callToolMock).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("clearPendingEscalation", () => {
+    it("clears successfully on the first attempt", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ ok: true, archived: { category: "pending_escalation", name: CONTRACT } }));
+      const client = new SibylMemoryClient();
+      await client.clearPendingEscalation(CONTRACT);
+      expect(callToolMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats a NOT_FOUND rejection as a successful no-op — already cleared", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ code: "NOT_FOUND" }, true));
+      const client = new SibylMemoryClient();
+      await expect(client.clearPendingEscalation(CONTRACT)).resolves.toBeUndefined();
+    });
+
+    it("throws MemoryToolRejectedError on a real (non-NOT_FOUND) rejection", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ code: "VALIDATION_ERROR" }, true));
+      const client = new SibylMemoryClient();
+      await expect(client.clearPendingEscalation(CONTRACT)).rejects.toBeInstanceOf(MemoryToolRejectedError);
+    });
+
+    it("retries a transport-level failure — without this, a stale pending-escalation record could block real payments forever", async () => {
+      callToolMock
+        .mockRejectedValueOnce(new Error("stdio pipe closed"))
+        .mockResolvedValueOnce(textResult({ ok: true, archived: { category: "pending_escalation", name: CONTRACT } }));
+      const client = new SibylMemoryClient();
+      await expect(client.clearPendingEscalation(CONTRACT)).resolves.toBeUndefined();
+      expect(callToolMock).toHaveBeenCalledTimes(2);
+    });
+  });
 });

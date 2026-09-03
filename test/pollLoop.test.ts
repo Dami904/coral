@@ -103,11 +103,16 @@ describe("runPollLoop", () => {
         pollIntervalMs: 0,
         startBlock: 1n,
         handle: async () => ({ outcome: "pending_approval", requestId: 7n, fromBlock: 10n }),
-        resumePending: async (contract, requestId, fromBlock): Promise<ResumePendingOutcome> => {
+        resumePending: async (contract, requestId, fromBlock, requester): Promise<ResumePendingOutcome> => {
           resumeCalls++;
           expect(contract).toBe(CONTRACT);
           expect(requestId).toBe(7n);
           expect(fromBlock).toBe(10n);
+          // The original asker (tracked.replyTo, from the pending_approval
+          // reply's target) — the same identity `handle` would have
+          // received as its own requester, forwarded here so a resumed
+          // journal entry can carry it too.
+          expect(requester).toBe("0x000000000000000000000000000000000000a1");
           if (resumeCalls < 2) return { outcome: "still_pending" };
           return { outcome: "paid", tier: "high_conviction", txHash: "0xresolved" };
         },

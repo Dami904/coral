@@ -77,9 +77,10 @@ describe("pollOnce", () => {
     expect(result.processed).toBe(0);
   });
 
-  it("extracts the contract, calls handle, and replies with the formatted outcome", async () => {
+  it("extracts the contract, calls handle with the sender as requester, and replies with the formatted outcome", async () => {
     const ping = makePing([msg({})]);
     let receivedContract: string | null = null;
+    let receivedRequester: string | null = null;
 
     const outcome: HandleOutcome = { outcome: "paid", tier: "high_conviction", txHash: "0xbeef" };
     const result = await pollOnce({
@@ -87,13 +88,15 @@ describe("pollOnce", () => {
       lastProcessedBlock: 0n,
       extractContract: extractContractAddress,
       formatReply: defaultFormatReply,
-      handle: async (contract) => {
+      handle: async (contract, requester) => {
         receivedContract = contract;
+        receivedRequester = requester;
         return outcome;
       },
     });
 
     expect(receivedContract).toBe(CONTRACT.toLowerCase());
+    expect(receivedRequester).toBe(SENDER_A);
     expect(ping.replies).toHaveLength(1);
     expect(ping.replies[0]?.to).toBe(SENDER_A);
     expect(ping.replies[0]?.content).toContain("high_conviction");

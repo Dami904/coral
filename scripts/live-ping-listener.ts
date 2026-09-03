@@ -23,13 +23,12 @@
  */
 import { loadConfig } from "../src/config.js";
 import { handleGatewayQuery, handleTokenQuery, resumeAfterApproval } from "../src/decisionCore.js";
-import { SpendGuardChainClient } from "../src/chain/spendGuardClient.js";
-import { SibylMemoryClient } from "../src/memory/sibylMemoryClient.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
 import { PingChainClient } from "../src/ping/pingChainClient.js";
 import { runPollLoop } from "../src/ping/pollLoop.js";
 import { extractGatewayRequest } from "../src/ping/pollOnce.js";
 import { SpendGuardIncomingPaymentVerifier } from "../src/gateway/incomingPaymentVerifier.js";
+import { makeChainClient, makeMemoryClient } from "./lib/liveHarness.js";
 
 const POLL_INTERVAL_MS = 15_000;
 const PRICE_USDC_6DP = 250_000n; // matches the real /api/evaluate price
@@ -50,18 +49,8 @@ async function main() {
     );
   }
 
-  const chain = new SpendGuardChainClient({
-    rpcUrl: config.rpcUrl,
-    guardAddress: config.guardAddress,
-    agentPrivateKey: config.agentPrivateKey,
-    chain: config.chain,
-  });
-  const memory = new SibylMemoryClient({
-    command: config.memoryMcpCommand,
-    ...(config.memoryDbPath
-      ? { env: { ...process.env, SIBYL_MEMORY_DB: config.memoryDbPath } }
-      : {}),
-  });
+  const chain = makeChainClient(config);
+  const memory = makeMemoryClient(config);
   const intelligence = new X402IntelligenceClient({ endpointUrl: "https://sibylcap.com/api/evaluate" });
   // Direction B (gateway): reads SpendGuard's own `usdc` immutable to know
   // which token to check Transfer events against — see PLAN.md's "Gateway
@@ -83,17 +72,21 @@ async function main() {
       ping,
       pollIntervalMs: POLL_INTERVAL_MS,
       startBlock,
-      handle: (contract) =>
-        handleTokenQuery(contract, {
-          memory,
-          chain,
-          intelligence,
-          payTo: config.vendorPayTo,
-          priceUsdc6dp: PRICE_USDC_6DP,
-          staleWindowMs: 60 * 60 * 1000,
-        }),
-      resumePending: (contract, requestId, fromBlock) =>
-        resumeAfterApproval(contract, requestId, fromBlock, { memory, intelligence, chain, now: () => new Date() }),
+      handle: (contract, requester) =>
+        handleTokenQuery(
+          contract,
+          {
+            memory,
+            chain,
+            intelligence,
+            payTo: config.vendorPayTo,
+            priceUsdc6dp: PRICE_USDC_6DP,
+            staleWindowMs: 60 * 60 * 1000,
+          },
+          requester,
+        ),
+      resumePending: (contract, requestId, fromBlock, requester) =>
+        resumeAfterApproval(contract, requestId, fromBlock, { memory, intelligence, chain, now: () => new Date() }, requester),
       // Direction B: a message carrying both a contract address and a
       // payment tx hash is served as a paid gateway request instead of the
       // free one above. pending_approval outcomes from this path are

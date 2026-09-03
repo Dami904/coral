@@ -21,23 +21,34 @@ const NOW = new Date("2026-08-26T12:00:00.000Z");
 
 function makeMemory(
   recallResult: TokenVerdictRecord | null,
-  opts: { rememberError?: Error; consumedTxHashes?: `0x${string}`[] } = {},
+  opts: {
+    rememberError?: Error;
+    consumedTxHashes?: `0x${string}`[];
+    pendingEscalation?: { requestId: bigint; fromBlock: bigint } | null;
+  } = {},
 ): MemoryPort & {
   calls: string[];
   remembered: { contract: string; record: TokenVerdictRecord }[];
   events: { kind: string; body: Record<string, unknown>; ref: { category: string; name: string } }[];
   consumedPayments: { txHash: `0x${string}`; body: Record<string, unknown> }[];
+  pendingEscalationsSet: { contract: string; requestId: bigint; fromBlock: bigint }[];
+  pendingEscalationsCleared: string[];
 } {
   const calls: string[] = [];
   const remembered: { contract: string; record: TokenVerdictRecord }[] = [];
   const events: { kind: string; body: Record<string, unknown>; ref: { category: string; name: string } }[] = [];
   const consumedPayments: { txHash: `0x${string}`; body: Record<string, unknown> }[] = [];
   const consumedTxHashes = new Set(opts.consumedTxHashes ?? []);
+  const pendingEscalationsSet: { contract: string; requestId: bigint; fromBlock: bigint }[] = [];
+  const pendingEscalationsCleared: string[] = [];
+  let pendingEscalation = opts.pendingEscalation ?? null;
   return {
     calls,
     remembered,
     events,
     consumedPayments,
+    pendingEscalationsSet,
+    pendingEscalationsCleared,
     async recallTokenVerdict(contract) {
       calls.push("recall");
       expect(contract).toBe(CONTRACT);
@@ -61,10 +72,26 @@ function makeMemory(
       consumedTxHashes.add(txHash);
       consumedPayments.push({ txHash, body });
     },
+    async getPendingEscalation() {
+      calls.push("getPendingEscalation");
+      return pendingEscalation;
+    },
+    async setPendingEscalation(contract, requestId, fromBlock) {
+      calls.push("setPendingEscalation");
+      pendingEscalation = { requestId, fromBlock };
+      pendingEscalationsSet.push({ contract, requestId, fromBlock });
+    },
+    async clearPendingEscalation(contract) {
+      calls.push("clearPendingEscalation");
+      pendingEscalation = null;
+      pendingEscalationsCleared.push(contract);
+    },
   };
 }
 
-function makeChain(outcome: PaymentOutcome): ChainPort & { calls: string[]; requestedAmount: bigint | null } {
+function makeChain(
+  outcome: PaymentOutcome | Error,
+): ChainPort & { calls: string[]; requestedAmount: bigint | null } {
   const calls: string[] = [];
   let requestedAmount: bigint | null = null;
   return {
@@ -76,6 +103,7 @@ function makeChain(outcome: PaymentOutcome): ChainPort & { calls: string[]; requ
       calls.push("requestPayment");
       expect(payTo).toBe(VENDOR);
       requestedAmount = amount;
+      if (outcome instanceof Error) throw outcome;
       return outcome;
     },
   };
@@ -251,6 +279,36 @@ describe("handleTokenQuery", () => {
     expect(memory.events[0]).toMatchObject({
       body: { cache_hit: false, paid: false, pending_request_id: "7" },
     });
+    expect(memory.pendingEscalationsSet).toEqual([{ contract: CONTRACT, requestId: 7n, fromBlock: 42n }]);
+  });
+
+  it("on a contract with an already-pending escalation: returns it directly and never proposes a second one", async () => {
+    // Regression coverage for a real bug found running scripts/live-http-server.ts
+    // live: a repeat query used to fire a brand-new requestPayment every
+    // time, and SpendGuard's own rate/budget rules don't count an
+    // unapproved pending request (test/SpendGuard.t.sol's
+    // PendingDoesNotConsumeBudgetOrRateUntilApproved), so nothing on-chain
+    // stopped unbounded repeat-escalation spam without this check.
+    const memory = makeMemory(null, { pendingEscalation: { requestId: 99n, fromBlock: 500n } });
+    const chain = makeChain(new Error("should never be called — an existing pending escalation must short-circuit before this"));
+    const intelligence = makeIntelligence(new Error("should never be called"));
+
+    const result = await handleTokenQuery(CONTRACT, {
+      memory,
+      chain,
+      intelligence,
+      payTo: VENDOR,
+      priceUsdc6dp: PRICE,
+      staleWindowMs: STALE_WINDOW_MS,
+      now: () => NOW,
+    });
+
+    expect(result).toEqual({ outcome: "pending_approval", requestId: 99n, fromBlock: 500n });
+    expect(chain.calls).toEqual([]);
+    expect(intelligence.calls).toEqual([]);
+    expect(memory.events[0]).toMatchObject({
+      body: { cache_hit: false, paid: false, pending_request_id: "99", already_pending: true },
+    });
   });
 
   it("on a sent payment: checks intelligence, caches the tier, and journals the paid event", async () => {
@@ -284,6 +342,22 @@ describe("handleTokenQuery", () => {
     expect(memory.events.at(-1)).toMatchObject({
       body: { cache_hit: false, paid: true, tx_hash: "0xbeef", tier: "unsafe" },
     });
+    expect(memory.events.at(-1)?.body).not.toHaveProperty("requester");
+  });
+
+  it("threads an optional requester into the journal event when the caller provides one, omits it otherwise", async () => {
+    const REQUESTER = "0x00000000000000000000000000000000c0ffee";
+    const memory = makeMemory(null);
+    const chain = makeChain({ kind: "sent", payTo: VENDOR, amount: PRICE, txHash: "0xbeef" });
+    const intelligence = makeIntelligence({ tier: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
+
+    await handleTokenQuery(
+      CONTRACT,
+      { memory, chain, intelligence, payTo: VENDOR, priceUsdc6dp: PRICE, staleWindowMs: STALE_WINDOW_MS, now: () => NOW },
+      REQUESTER,
+    );
+
+    expect(memory.events.at(-1)?.body).toMatchObject({ requester: REQUESTER });
   });
 
   it("on a sent payment whose intelligence check then fails: journals the tx before throwing, writes no cache entry", async () => {
@@ -401,9 +475,10 @@ describe("resumeAfterApproval", () => {
     expect(intelligence.calls).toEqual([]);
     expect(memory.remembered).toEqual([]);
     expect(chain.calls).toEqual([{ requestId: 7n, fromBlock: 10n }]);
+    expect(memory.pendingEscalationsCleared).toEqual([]);
   });
 
-  it("on rejected: returns rejected, journals it, never calls intelligence", async () => {
+  it("on rejected: returns rejected, journals it, never calls intelligence, clears the pending-escalation record", async () => {
     const memory = makeMemory(null);
     const chain = makeResumableChain([{ kind: "rejected", txHash: "0xrej" }]);
     const intelligence = makeIntelligence(new Error("should never be called"));
@@ -416,6 +491,7 @@ describe("resumeAfterApproval", () => {
     expect(memory.events[0]).toMatchObject({
       body: { cache_hit: false, paid: false, pending_request_id: "9", rejected: true, tx_hash: "0xrej" },
     });
+    expect(memory.pendingEscalationsCleared).toEqual([CONTRACT]);
   });
 
   it("on approved: finishes exactly like a first-touch payment — checks intelligence and caches the tier", async () => {
@@ -440,6 +516,7 @@ describe("resumeAfterApproval", () => {
         },
       },
     ]);
+    expect(memory.pendingEscalationsCleared).toEqual([CONTRACT]);
   });
 
   it("never re-requests payment, even when it would resolve to approved — checkPendingResolution is the only call made", async () => {
@@ -600,6 +677,11 @@ describe("handleGatewayQuery", () => {
     expect(result).toEqual({ outcome: "paid", tier: "high_conviction", txHash: "0xbeef" });
     expect(chain.calls).toEqual(["requestPayment"]);
     expect(memory.consumedPayments).toHaveLength(1);
+    // The verified on-chain payer (not a self-reported identity) flows
+    // into the same decision journal handleTokenQuery already writes to —
+    // the gateway path gets "who asked" for free, from a stronger signal
+    // than a Ping sender address would be.
+    expect(memory.events.at(-1)?.body).toMatchObject({ requester: PAYER });
   });
 
   it("on a valid payment whose downstream check escalates: returns pending_approval, payment stays consumed (no refund path)", async () => {

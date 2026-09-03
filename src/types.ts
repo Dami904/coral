@@ -56,6 +56,30 @@ export interface MemoryPort {
    * runs, not after — see PLAN.md for why (closes a race, at the cost of
    * a downstream failure burning the payment with no refund path). */
   markPaymentConsumed(txHash: `0x${string}`, body: Record<string, unknown>): Promise<void>;
+  /**
+   * Escalation-request de-dup: does this contract already have an
+   * unresolved pending escalation in flight? Checked in decisionCore
+   * before ever calling chain.requestPayment, so a repeat query (over
+   * Ping or the free HTTP path) for a contract whose price crossed
+   * humanApprovalThreshold doesn't create a second on-chain
+   * PaymentPending proposal while the first still awaits
+   * ownerApprove/ownerReject. This has no on-chain backstop of its own —
+   * SpendGuard's rate/budget rules don't count a pending request until
+   * it's approved (test/SpendGuard.t.sol:
+   * test_RequestPayment_PendingDoesNotConsumeBudgetOrRateUntilApproved) —
+   * so memory is the only thing preventing unbounded repeat-escalation
+   * spam here. Deleting Sibyl Memory erases this guard along with
+   * everything else, same as the other two ledgers above.
+   */
+  getPendingEscalation(contract: string): Promise<{ requestId: bigint; fromBlock: bigint } | null>;
+  /** Records a freshly-proposed escalation. Called right after
+   * chain.requestPayment returns "pending", before returning to the
+   * caller. */
+  setPendingEscalation(contract: string, requestId: bigint, fromBlock: bigint): Promise<void>;
+  /** Clears the record once resumeAfterApproval resolves it either way
+   * (approved-and-completed, or rejected) — a still-pending resolution
+   * leaves it in place. */
+  clearPendingEscalation(contract: string): Promise<void>;
 }
 
 export interface ChainPort {

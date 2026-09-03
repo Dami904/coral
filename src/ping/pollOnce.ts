@@ -7,7 +7,10 @@ export type PollOnceDeps = {
   lastProcessedBlock: bigint;
   extractContract: (content: string) => string | null;
   formatReply: (outcome: PollReplyOutcome) => string;
-  handle: (contract: string) => Promise<HandleOutcome>;
+  /** requester is the Ping sender's address (msg.from) — purely
+   * descriptive, forwarded so decisionCore's journal can record who
+   * asked, same as the gateway path already records the verified payer. */
+  handle: (contract: string, requester: `0x${string}`) => Promise<HandleOutcome>;
   /**
    * Direction B (gateway): present only on a deployment that accepts paid
    * inbound requests. Checked before the free `handle` path on every
@@ -89,7 +92,7 @@ export async function pollOnce(deps: PollOnceDeps): Promise<PollOnceResult> {
     }
 
     try {
-      const outcome = await deps.handle(contract);
+      const outcome = await deps.handle(contract, msg.from);
       await deps.ping.sendReply(msg.from, deps.formatReply(outcome));
       if (outcome.outcome === "pending_approval") {
         newlyPending.push({

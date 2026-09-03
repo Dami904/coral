@@ -5,6 +5,7 @@ import { withRetry } from "../lib/retry.js";
 
 const CATEGORY = "token_verdict";
 const PAYMENT_CATEGORY = "incoming_payment";
+const PENDING_ESCALATION_CATEGORY = "pending_escalation";
 const TRANSPORT_RETRY = { maxAttempts: 3, baseDelayMs: 200 };
 
 export type SibylMemoryClientConfig = {
@@ -268,6 +269,89 @@ export class SibylMemoryClient implements MemoryPort {
         err,
       });
       await this.writeMarkPaymentConsumed(txHash, body);
+    }
+  }
+
+  async getPendingEscalation(contract: string): Promise<{ requestId: bigint; fromBlock: bigint } | null> {
+    // Same reasoning as recallTokenVerdict/wasPaymentConsumed: a local
+    // SQLite read is safe to blind-retry on a transport failure.
+    const result = await this.callTool(
+      "memory_recall",
+      { category: PENDING_ESCALATION_CATEGORY, name: contract },
+      { retryTransportFailures: true },
+    );
+    if (result.isError) {
+      if (SibylMemoryClient.isNotFound(result.parsed)) return null;
+      throw new MemoryToolRejectedError("memory_recall", result.parsed);
+    }
+    const payload = result.parsed as { entity?: { body?: unknown } };
+    const body = payload.entity?.body;
+    if (!body || typeof body !== "object" || !("requestId" in body) || !("fromBlock" in body)) {
+      throw new Error(`memory_recall returned a pending-escalation entity with no usable body: ${JSON.stringify(result.parsed)}`);
+    }
+    const { requestId, fromBlock } = body as { requestId: string; fromBlock: string };
+    return { requestId: BigInt(requestId), fromBlock: BigInt(fromBlock) };
+  }
+
+  private async writeSetPendingEscalation(contract: string, requestId: bigint, fromBlock: bigint): Promise<void> {
+    const result = await this.callTool("memory_remember", {
+      category: PENDING_ESCALATION_CATEGORY,
+      name: contract,
+      body: { requestId: requestId.toString(), fromBlock: fromBlock.toString() },
+    });
+    if (result.isError) {
+      throw new MemoryToolRejectedError("memory_remember", result.parsed);
+    }
+  }
+
+  async setPendingEscalation(contract: string, requestId: bigint, fromBlock: bigint): Promise<void> {
+    try {
+      await this.writeSetPendingEscalation(contract, requestId, fromBlock);
+    } catch (err) {
+      if (err instanceof MemoryToolRejectedError) throw err;
+      // Transport-level (UNKNOWN): reconcile via a re-read, same pattern as
+      // rememberTokenVerdict — only resend if the write genuinely isn't
+      // there yet, so a lost-response case doesn't silently overwrite a
+      // later, already-superseding requestId with a stale one.
+      const reread = await this.getPendingEscalation(contract).catch(() => null);
+      if (reread && reread.requestId === requestId) {
+        console.error("setPendingEscalation: transport failure after a write that had already landed — not resending", {
+          contract,
+          requestId,
+          err,
+        });
+        return;
+      }
+      console.error("setPendingEscalation: transport failure, reconcile found no fresh write yet — resending once", {
+        contract,
+        requestId,
+        err,
+      });
+      await this.writeSetPendingEscalation(contract, requestId, fromBlock);
+    }
+  }
+
+  async clearPendingEscalation(contract: string): Promise<void> {
+    // Safe to blind-retry on a transport failure, same reasoning as the
+    // other reads on this class: memory_forget on an already-forgotten
+    // key is a documented no-op (the NOT_FOUND handling right below),
+    // so a retried forget can never do anything worse than the first
+    // attempt would have. Without this, a single transient stdio hiccup
+    // here leaves a stale pending-escalation record in place with no
+    // retry and nothing scheduling reconciliation — on the rejected path
+    // that permanently blocks a real payment attempt from ever starting
+    // again for this contract (decisionCore.ts's getPendingEscalation
+    // check keeps pointing at the dead requestId).
+    const result = await this.callTool(
+      "memory_forget",
+      { category: PENDING_ESCALATION_CATEGORY, name: contract, reason: "escalation resolved" },
+      { retryTransportFailures: true },
+    );
+    if (result.isError) {
+      // Forgetting an already-absent record (e.g. a retry of this same
+      // clear) is not a real failure — anything else is.
+      if (SibylMemoryClient.isNotFound(result.parsed)) return;
+      throw new MemoryToolRejectedError("memory_forget", result.parsed);
     }
   }
 }

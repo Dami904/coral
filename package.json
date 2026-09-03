@@ -18,6 +18,7 @@
     "live:day3-smoke": "tsx scripts/live-day3-smoke.ts",
     "live:day5-smoke": "tsx scripts/live-day5-smoke.ts",
     "live:ping-listener": "tsx scripts/live-ping-listener.ts",
+    "live:http-server": "tsx scripts/live-http-server.ts",
     "live:deletion-test": "tsx scripts/live-deletion-test.ts",
     "live:escalation-demo": "tsx scripts/live-escalation-demo.ts",
     "live:escalation-resume-demo": "tsx scripts/live-escalation-resume-demo.ts",

@@ -9,16 +9,24 @@ export type PollLoopConfig = {
   ping: PingPort;
   pollIntervalMs: number;
   startBlock: bigint;
-  handle: (contract: string) => Promise<HandleOutcome>;
+  handle: (contract: string, requester: `0x${string}`) => Promise<HandleOutcome>;
   /**
    * Checks whether a previously-escalated payment has since been approved
    * or rejected on-chain and, if approved, finishes the intelligence-check
    * + cache-write tail (decisionCore's resumeAfterApproval, bound to a
    * ResumableChainPort). Omit to skip pending-request tracking entirely —
    * escalated payments will still show up via `handle`'s pending_approval
-   * outcome, they just won't auto-resume once approved.
+   * outcome, they just won't auto-resume once approved. `requester` is the
+   * same address the original pending_approval reply is queued to
+   * (tracked.replyTo below) — the original asker, forwarded for the
+   * journal, same as `handle`'s.
    */
-  resumePending?: (contract: string, requestId: bigint, fromBlock: bigint) => Promise<ResumePendingOutcome>;
+  resumePending?: (
+    contract: string,
+    requestId: bigint,
+    fromBlock: bigint,
+    requester: `0x${string}`,
+  ) => Promise<ResumePendingOutcome>;
   extractContract?: (content: string) => string | null;
   formatReply?: (outcome: PollReplyOutcome) => string;
   onCycle?: (result: PollOnceResult) => void;
@@ -82,7 +90,7 @@ export async function runPollLoop(config: PollLoopConfig, signal: AbortSignal): 
       for (const [key, tracked] of pendingRequests) {
         const requestId = BigInt(key);
         try {
-          const outcome = await config.resumePending(tracked.contract, requestId, tracked.fromBlock);
+          const outcome = await config.resumePending(tracked.contract, requestId, tracked.fromBlock, tracked.replyTo);
 
           if (outcome.outcome === "still_pending") continue; // no reply — don't spam every cycle
 

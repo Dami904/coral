@@ -65,8 +65,10 @@ async function finishAfterPayment(
   txHash: `0x${string}`,
   deps: FinishAfterPaymentDeps,
   ref: { category: string; name: string },
+  requester?: string,
 ): Promise<HandleOutcome> {
   const now = (deps.now ?? (() => new Date()))();
+  const requesterField = requester ? { requester } : {};
 
   // Journal the payment fact BEFORE the intelligence call, so a failure
   // below still leaves a reconciliable record instead of a silent
@@ -78,7 +80,7 @@ async function finishAfterPayment(
     await recordEventBestEffort(
       deps.memory,
       "decision",
-      { cache_hit: false, paid: true, tx_hash: txHash, intel_error: String(err) },
+      { cache_hit: false, paid: true, tx_hash: txHash, intel_error: String(err), ...requesterField },
       ref,
     );
     throw new IntelligenceCheckFailedAfterPaymentError(contract, txHash, err);
@@ -95,7 +97,7 @@ async function finishAfterPayment(
     await recordEventBestEffort(
       deps.memory,
       "decision",
-      { cache_hit: false, paid: true, tx_hash: txHash, tier: intel.tier, cache_write_error: String(err) },
+      { cache_hit: false, paid: true, tx_hash: txHash, tier: intel.tier, cache_write_error: String(err), ...requesterField },
       ref,
     );
     throw new CacheWriteFailedAfterPaymentError(contract, txHash, err);
@@ -103,7 +105,7 @@ async function finishAfterPayment(
 
   await deps.memory.recordEvent(
     "decision",
-    { cache_hit: false, paid: true, tx_hash: txHash, tier: intel.tier },
+    { cache_hit: false, paid: true, tx_hash: txHash, tier: intel.tier, ...requesterField },
     ref,
   );
   return { outcome: "paid", tier: intel.tier, txHash };
@@ -114,18 +116,50 @@ async function finishAfterPayment(
  * one event, and memory is always consulted before any chain call — the
  * cold-start-recall / deletion-test gate this whole project is judged on
  * depends on that ordering being real, not just documented.
+ *
+ * `requester` is optional and purely descriptive — never used for any
+ * decision (cache/policy/payment logic is identical regardless of who's
+ * asking). Ping's poll loop passes the sender's address; the free HTTP
+ * path has no caller identity to offer and omits it. See
+ * MemoryPort.recordEvent's journal — this is the "who asked" field
+ * PLAN.md's original data-model sketch proposed but the code never grew
+ * until now.
  */
 export async function handleTokenQuery(
   contract: string,
   deps: HandleTokenQueryDeps,
+  requester?: string,
 ): Promise<HandleOutcome> {
   const now = (deps.now ?? (() => new Date()))();
   const ref = { category: CATEGORY, name: contract };
+  const requesterField = requester ? { requester } : {};
 
   const cached = await deps.memory.recallTokenVerdict(contract);
   if (cached && now.getTime() - Date.parse(cached.checked_at) < deps.staleWindowMs) {
-    await deps.memory.recordEvent("decision", { cache_hit: true, paid: false }, ref);
+    await deps.memory.recordEvent("decision", { cache_hit: true, paid: false, ...requesterField }, ref);
     return { outcome: "cache_hit", tier: cached.tier, checkedAt: cached.checked_at };
+  }
+
+  // An earlier call for this contract may already have escalated and be
+  // awaiting ownerApprove/ownerReject — SpendGuard's own rate/budget rules
+  // don't count a pending request until it's approved, so without this
+  // check a repeat query (Ping or the free HTTP path) would create a new
+  // on-chain proposal every time instead of pointing back at the one
+  // already in flight. See MemoryPort.getPendingEscalation.
+  const existingPending = await deps.memory.getPendingEscalation(contract);
+  if (existingPending) {
+    await deps.memory.recordEvent(
+      "decision",
+      {
+        cache_hit: false,
+        paid: false,
+        pending_request_id: existingPending.requestId.toString(),
+        already_pending: true,
+        ...requesterField,
+      },
+      ref,
+    );
+    return { outcome: "pending_approval", requestId: existingPending.requestId, fromBlock: existingPending.fromBlock };
   }
 
   const payment = await deps.chain.requestPayment(deps.payTo, deps.priceUsdc6dp);
@@ -133,23 +167,24 @@ export async function handleTokenQuery(
   if (payment.kind === "blocked") {
     await deps.memory.recordEvent(
       "decision",
-      { cache_hit: false, paid: false, blocked_reason: payment.reason },
+      { cache_hit: false, paid: false, blocked_reason: payment.reason, ...requesterField },
       ref,
     );
     return { outcome: "blocked", reason: payment.reason };
   }
 
   if (payment.kind === "pending") {
+    await deps.memory.setPendingEscalation(contract, payment.requestId, payment.blockNumber);
     await deps.memory.recordEvent(
       "decision",
-      { cache_hit: false, paid: false, pending_request_id: payment.requestId.toString() },
+      { cache_hit: false, paid: false, pending_request_id: payment.requestId.toString(), ...requesterField },
       ref,
     );
     return { outcome: "pending_approval", requestId: payment.requestId, fromBlock: payment.blockNumber };
   }
 
   // payment.kind === "sent": funds moved.
-  return finishAfterPayment(contract, payment.txHash, deps, ref);
+  return finishAfterPayment(contract, payment.txHash, deps, ref, requester);
 }
 
 export type HandleGatewayQueryDeps = HandleTokenQueryDeps & {
@@ -201,7 +236,10 @@ export async function handleGatewayQuery(
     consumed_at: now.toISOString(),
   });
 
-  return handleTokenQuery(contract, deps);
+  // The verified on-chain payer, not a self-reported identity — a
+  // stronger "who asked" signal than a Ping sender address would be,
+  // since it's the address that actually moved the funds.
+  return handleTokenQuery(contract, deps, verification.payer);
 }
 
 export type ResumeAfterApprovalDeps = {
@@ -226,8 +264,10 @@ export async function resumeAfterApproval(
   requestId: bigint,
   fromBlock: bigint,
   deps: ResumeAfterApprovalDeps,
+  requester?: string,
 ): Promise<ResumeOutcome> {
   const ref = { category: CATEGORY, name: contract };
+  const requesterField = requester ? { requester } : {};
   const resolution: PendingResolution = await deps.chain.checkPendingResolution(requestId, fromBlock);
 
   if (resolution.kind === "still_pending") {
@@ -235,14 +275,20 @@ export async function resumeAfterApproval(
   }
 
   if (resolution.kind === "rejected") {
+    await deps.memory.clearPendingEscalation(contract).catch((err: unknown) => {
+      console.error("resumeAfterApproval: clearPendingEscalation failed after a rejection — logging, not throwing", { contract, err });
+    });
     await recordEventBestEffort(
       deps.memory,
       "decision",
-      { cache_hit: false, paid: false, pending_request_id: requestId.toString(), rejected: true, tx_hash: resolution.txHash },
+      { cache_hit: false, paid: false, pending_request_id: requestId.toString(), rejected: true, tx_hash: resolution.txHash, ...requesterField },
       ref,
     );
     return { outcome: "rejected" };
   }
 
-  return finishAfterPayment(contract, resolution.txHash, deps, ref);
+  await deps.memory.clearPendingEscalation(contract).catch((err: unknown) => {
+    console.error("resumeAfterApproval: clearPendingEscalation failed after approval — logging, not throwing", { contract, err });
+  });
+  return finishAfterPayment(contract, resolution.txHash, deps, ref, requester);
 }
