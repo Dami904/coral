@@ -108,6 +108,12 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: "ok" });
   });
+
+  it("sets Access-Control-Allow-Origin: * so browser callers (e.g. the landing page's live widget) aren't blocked cross-origin", async () => {
+    currentDeps = deps({});
+    const res = await fetch(`${baseUrl}/health`);
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+  });
 });
 
 describe("GET /check", () => {

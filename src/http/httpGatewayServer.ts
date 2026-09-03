@@ -27,7 +27,12 @@ const REQUEST_ID_RE = /^\d+$/;
 export type HttpGatewayDeps = HandleTokenQueryDeps & { chain: ResumableChainPort };
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json" });
+  // Public, unauthenticated, GET-only reads — open CORS is the correct
+  // policy here, not an oversight: there's no session/cookie to leak, and
+  // the same responses are already fetchable by anyone via plain curl.
+  // Lets browser-based callers (e.g. coral-landing's live widget) call
+  // this cross-origin without a bespoke allowlist to maintain.
+  res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
   res.end(JSON.stringify(body, (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value)));
 }
 

@@ -109,9 +109,40 @@ cp "$APP_DIR/deploy/coral-http-server.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable coral-ping-listener coral-http-server
 
-echo "== firewall: SSH + the HTTP gateway's port only; the Ping listener needs no inbound port =="
+echo "== Caddy: TLS-terminating reverse proxy in front of the HTTP gateway =="
+# The gateway itself (src/http/httpGatewayServer.ts) only ever speaks plain
+# HTTP on 8787 — no code in this repo does TLS. Left directly exposed,
+# that means any browser-based caller on an HTTPS page (GitHub Pages,
+# Netlify, coral-landing wherever it ends up hosted — all HTTPS-only by
+# default) gets silently mixed-content-blocked by the browser before the
+# request ever leaves. Caddy in front, using a nip.io hostname derived
+# from this box's own public IP, gets a real Let's Encrypt certificate
+# with no domain purchase and no manual DNS step required.
+if ! command -v caddy >/dev/null 2>&1; then
+  apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+  apt-get update -y -qq
+  apt-get install -y -qq caddy
+fi
+PUBLIC_IP="$(curl -fsSL -m 5 https://checkip.amazonaws.com 2>/dev/null | tr -d '[:space:]' || true)"
+if [ -n "$PUBLIC_IP" ]; then
+  NIP_HOST="$(echo "$PUBLIC_IP" | tr '.' '-').nip.io"
+  sed "s/__HOST__/$NIP_HOST/" "$APP_DIR/deploy/Caddyfile.template" > /etc/caddy/Caddyfile
+  systemctl enable caddy
+  systemctl restart caddy
+  echo ">>> HTTPS will be live at https://$NIP_HOST within ~30s of this VM's ports"
+  echo ">>> 80/443 being reachable from the internet (cert issuance happens on Caddy's first request)."
+else
+  echo ">>> Could not auto-detect this VM's public IP (no outbound internet during setup?)."
+  echo ">>> Skipping Caddy/TLS — the gateway is still reachable over plain HTTP on 8787."
+  echo ">>> See docs/DEPLOYMENT.md to configure deploy/Caddyfile.template by hand later."
+fi
+
+echo "== firewall: SSH + Caddy's 80/443 (ACME + HTTPS); 8787 stays local-only, reached via Caddy's reverse proxy =="
 ufw allow OpenSSH
-ufw allow 8787/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
 ufw --force enable
 
 cat <<'EOF'
@@ -126,6 +157,9 @@ Setup done. Next steps:
      (and coral-ping-listener once you've deliberately decided to register
      on Ping — see scripts/live-ping-register.ts's own warning; that's a
      real, one-time mainnet spend, not something this script does for you.)
-  3. curl http://<this-vm's-IP>:8787/health
+  3. curl https://<this-vm's-public-IP-with-dashes>.nip.io/health
+     (or curl http://localhost:8787/health directly on the box — 8787
+     itself is not exposed to the internet, only Caddy's 80/443 are.)
   4. journalctl -u coral-http-server -f    # tail logs
+     journalctl -u caddy -f                # tail the TLS proxy's logs
 EOF

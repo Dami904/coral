@@ -21,22 +21,35 @@ control the same way.
 
 ## What actually runs
 
-Two independent `systemd` services (`deploy/*.service`), both wrapping
-existing `pnpm live:*` scripts — nothing new, no separate deploy-only
-code path:
+Three independent services, two `systemd` units (`deploy/*.service`)
+wrapping existing `pnpm live:*` scripts — nothing new, no separate
+deploy-only code path — plus Caddy as a TLS-terminating reverse proxy:
 
 - **`coral-http-server`** — `src/http/httpGatewayServer.ts`, the free HTTP
-  entry point (`GET /check`, `/resume`, `/health`). Needs one inbound
-  port open (`8787` by default).
+  entry point (`GET /check`, `/resume`, `/health`). Binds `127.0.0.1:8787`
+  only (via Caddy in front — see below); not reachable directly from the
+  internet.
 - **`coral-ping-listener`** — the Ping poll loop. Outbound-only, no
   inbound port needed. **Do not enable this until you've deliberately
   registered the agent wallet on Ping** (`pnpm live:ping-register`) — that
   registration is real, one-time, irreversible mainnet gas spend, exactly
   the kind of action `CLAUDE.md` says needs an explicit human decision,
   not something a setup script does for you.
+- **Caddy** — reverse-proxies `443` to `127.0.0.1:8787` and gets a real
+  Let's Encrypt certificate automatically, using a hostname derived from
+  the VM's own public IP via [nip.io](https://nip.io) (`3-216-178-169.nip.io`
+  resolves to `3.216.178.169` — no domain purchase, no manual DNS record).
+  This exists because `httpGatewayServer.ts` itself only ever speaks plain
+  HTTP: without something terminating TLS in front of it, any browser
+  caller on an HTTPS page (GitHub Pages, Netlify, coral-landing wherever
+  it's hosted — HTTPS-only by default) gets silently mixed-content-blocked
+  before the request ever leaves the browser. The gateway also sends
+  `Access-Control-Allow-Origin: *` itself (`src/http/httpGatewayServer.ts`)
+  since every route is an unauthenticated GET with no cookie/session to
+  leak — so no CORS config is needed in Caddy either.
 
-Both read secrets from `/etc/coral/coral.env` (never the repo's own
-`.env`, and never committed) and write the memory DB to
+All three read secrets from `/etc/coral/coral.env` (never the repo's own
+`.env`, and never committed) and the app services write the memory DB to
 `/var/lib/coral/memory.db` — a path outside the git-managed `$APP_DIR`
 (`/opt/coral`) so a `git pull`/redeploy never touches it.
 
@@ -51,11 +64,13 @@ Both read secrets from `/etc/coral/coral.env` (never the repo's own
 2. **Attach a static IP** (Lightsail: Networking tab → Create static IP,
    free while attached to a running instance) so the address doesn't
    change on a reboot.
-3. **Open the firewall** for the HTTP gateway's port, in addition to SSH:
-   Lightsail Networking tab (or the EC2 security group) → add a rule for
-   TCP `8787` (or whatever you set `HTTP_PORT` to) from `0.0.0.0/0`. Leave
-   everything else closed — the Ping listener needs no inbound port at
-   all.
+3. **Open the firewall** for Caddy's ports, in addition to SSH:
+   Lightsail Networking tab (or the EC2 security group) → add rules for
+   TCP `80` and `443` from `0.0.0.0/0` (`80` is needed briefly for Let's
+   Encrypt's HTTP-01 challenge, `443` for the actual HTTPS traffic). Leave
+   `8787` closed to the internet — Caddy is the only public entry point
+   for the gateway — and leave everything else closed too; the Ping
+   listener needs no inbound port at all.
 4. **SSH in**, then either pipe-and-review or clone-and-run the setup
    script (`deploy/setup.sh` in this repo):
    ```bash
@@ -67,8 +82,9 @@ Both read secrets from `/etc/coral/coral.env` (never the repo's own
    one-liner — same standard `CLAUDE.md` already applies to this repo's
    own local setup), creates an unprivileged `coral` system user, clones
    the real repo to `/opt/coral`, runs `pnpm install --frozen-lockfile &&
-   pnpm build`, installs the two `systemd` units, and enables `ufw` for
-   SSH + the gateway port only.
+   pnpm build`, installs the two `systemd` units, installs and configures
+   Caddy (deriving a nip.io hostname from the VM's own public IP), and
+   enables `ufw` for SSH + `80`/`443` only.
 5. **Fill in `/etc/coral/coral.env`** (copied from `.env.example` by the
    script, mode `600`, owned by the `coral` user). At minimum for the free
    HTTP path on testnet: `AGENT_PRIVATE_KEY`, `BASE_SEPOLIA_RPC_URL`,
