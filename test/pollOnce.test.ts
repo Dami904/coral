@@ -82,7 +82,7 @@ describe("pollOnce", () => {
     let receivedContract: string | null = null;
     let receivedRequester: string | null = null;
 
-    const outcome: HandleOutcome = { outcome: "paid", tier: "high_conviction", txHash: "0xbeef" };
+    const outcome: HandleOutcome = { outcome: "paid", output: "high_conviction", txHash: "0xbeef" };
     const result = await pollOnce({
       ping,
       lastProcessedBlock: 0n,
@@ -135,7 +135,7 @@ describe("pollOnce", () => {
       formatReply: defaultFormatReply,
       handle: async (contract) => {
         if (contract === CONTRACT.toLowerCase()) throw new Error("guard reverted");
-        return { outcome: "cache_hit", tier: "safe", checkedAt: "now" };
+        return { outcome: "cache_hit", output: "safe", checkedAt: "now" };
       },
     });
 
@@ -162,7 +162,7 @@ describe("pollOnce", () => {
       extractGatewayRequest,
       handleGateway: async (contract, txHash) => {
         gatewayArgs = { contract, txHash };
-        return { outcome: "paid", tier: "high_conviction", txHash: "0xbeef" };
+        return { outcome: "paid", output: "high_conviction", txHash: "0xbeef" };
       },
     });
 
@@ -185,7 +185,7 @@ describe("pollOnce", () => {
       formatReply: defaultFormatReply,
       handle: async () => {
         handleCalls++;
-        return { outcome: "cache_hit", tier: "safe", checkedAt: "now" };
+        return { outcome: "cache_hit", output: "safe", checkedAt: "now" };
       },
       extractGatewayRequest,
       handleGateway: async () => {
@@ -289,13 +289,13 @@ describe("extractGatewayRequest", () => {
 describe("defaultFormatReply", () => {
   it("formats every outcome variant into non-empty human text", () => {
     const outcomes: PollReplyOutcome[] = [
-      { outcome: "cache_hit", tier: "safe", checkedAt: "2026-01-01T00:00:00.000Z" },
-      { outcome: "paid", tier: "high_conviction", txHash: "0xbeef" },
+      { outcome: "cache_hit", output: "safe", checkedAt: "2026-01-01T00:00:00.000Z" },
+      { outcome: "paid", output: "high_conviction", txHash: "0xbeef" },
       { outcome: "pending_approval", requestId: 3n, fromBlock: 10n },
       { outcome: "blocked", reason: "budget-window" },
       { outcome: "no_contract_found" },
       { outcome: "error", message: "boom" },
-      { outcome: "resumed", tier: "high_conviction", txHash: "0xbeef" },
+      { outcome: "resumed", output: "high_conviction", txHash: "0xbeef" },
       { outcome: "resumed_rejected", requestId: 3n },
       { outcome: "payment_not_found" },
       { outcome: "payment_wrong_recipient" },

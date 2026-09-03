@@ -1,7 +1,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
-import { handleTokenQuery, resumeAfterApproval, type HandleTokenQueryDeps } from "../decisionCore.js";
+import { handleJobQuery, resumeAfterApproval, type HandleTokenQueryDeps } from "../decisionCore.js";
 import { createKeyedLock } from "../lib/keyedLock.js";
-import type { ResumableChainPort } from "../types.js";
+import type { HiredAgentId, ResumableChainPort } from "../types.js";
 
 const CONTRACT_RE = /^0x[a-fA-F0-9]{40}$/;
 const REQUEST_ID_RE = /^\d+$/;
@@ -10,7 +10,7 @@ const REQUEST_ID_RE = /^\d+$/;
  * The free HTTP entry point: any caller can request a conviction-tier
  * lookup with no payment of their own — Coral pays Sibyl out of its own
  * SpendGuard treasury on a cache miss, same as the Ping/free path
- * (decisionCore.handleTokenQuery). Worst-case spend exposure from public
+ * (decisionCore.handleJobQuery). Worst-case spend exposure from public
  * abuse is bounded by SpendGuard's own on-chain budget/rate-limit/
  * allowlist rules, not by anything this HTTP layer does — a flood of
  * requests degrades to "blocked" (503) once the guard's own rate limit
@@ -18,14 +18,21 @@ const REQUEST_ID_RE = /^\d+$/;
  * agent wallet. See docs/THREAT_MODEL.md.
  *
  * Safely retryable for a single client's *sequential* retries: if a
- * connection drops mid `handleTokenQuery` after a real payment already
+ * connection drops mid `handleJobQuery` after a real payment already
  * landed, the memory write happens before this handler returns anything,
  * so a retried GET for the same contract is a cache hit, not a second
  * payment. That guarantee does NOT extend to concurrent requests for the
  * same contract from different callers — see the per-contract lock below
  * and docs/LIMITATIONS.md.
  */
-export type HttpGatewayDeps = HandleTokenQueryDeps & { chain: ResumableChainPort };
+export type HttpGatewayDeps = HandleTokenQueryDeps & {
+  chain: ResumableChainPort;
+  /** Which hired agent this deployment's /check and /resume answer for —
+   * always Sibyl's conviction-check today (see scripts/lib/liveHarness.ts's
+   * SIBYL_HIRED_AGENT_ID), but the core no longer assumes that's the only
+   * possible value. */
+  hiredAgentId: HiredAgentId;
+};
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   // Public, unauthenticated, GET-only reads — open CORS is the correct
@@ -53,11 +60,19 @@ async function handleCheck(
     return;
   }
 
-  const outcome = await withContractLock(contract, () => handleTokenQuery(contract, deps));
+  const outcome = await withContractLock(contract, () => handleJobQuery(deps.hiredAgentId, contract, deps));
   switch (outcome.outcome) {
     case "cache_hit":
+      // Explicit field-by-field build, not a spread: `outcome.output` is
+      // the core's now-generic field name, but the wire response keeps
+      // `tier` — this deployment's one real hired agent (Sibyl) really is
+      // a conviction tier, and coral-landing's live widget already reads
+      // `data.tier`. A blind `{...outcome}` would leak `output` instead
+      // and silently break that widget.
+      sendJson(res, 200, { outcome: outcome.outcome, tier: outcome.output, checkedAt: outcome.checkedAt, note: "Conviction tier, not a safety/scam verdict." });
+      return;
     case "paid":
-      sendJson(res, 200, { ...outcome, note: "Conviction tier, not a safety/scam verdict." });
+      sendJson(res, 200, { outcome: outcome.outcome, tier: outcome.output, txHash: outcome.txHash, note: "Conviction tier, not a safety/scam verdict." });
       return;
     case "pending_approval":
       sendJson(res, 202, {
@@ -94,9 +109,9 @@ async function handleResume(
   // Same lock namespace as /check: a /resume landing while a /check for
   // the same contract is still mid-flight (e.g. awaiting the intelligence
   // check after a just-approved payment) should queue behind it, not race
-  // it — both ultimately write the same token_verdict cache entry.
+  // it — both ultimately write the same job-cache entry.
   const outcome = await withContractLock(contract, () =>
-    resumeAfterApproval(contract, BigInt(requestIdRaw), BigInt(fromBlockRaw), deps),
+    resumeAfterApproval(deps.hiredAgentId, contract, BigInt(requestIdRaw), BigInt(fromBlockRaw), deps),
   );
   switch (outcome.outcome) {
     case "still_pending":
@@ -106,7 +121,8 @@ async function handleResume(
       sendJson(res, 409, outcome);
       return;
     case "paid":
-      sendJson(res, 200, { ...outcome, note: "Conviction tier, not a safety/scam verdict." });
+      // Explicit build, not a spread — same reasoning as handleCheck above.
+      sendJson(res, 200, { outcome: outcome.outcome, tier: outcome.output, txHash: outcome.txHash, note: "Conviction tier, not a safety/scam verdict." });
       return;
   }
 }

@@ -27,22 +27,22 @@ afterAll(async () => {
 describe("X402IntelligenceClient", () => {
   it("relays the tx hash and token, and returns the tier", async () => {
     const client = new X402IntelligenceClient({ endpointUrl: baseUrl });
-    const result = await client.checkToken(CONTRACT, TX_A);
+    const result = await client.invoke(CONTRACT, TX_A);
 
-    expect(result.tier).toBe("high_conviction");
+    expect(result.output).toBe("high_conviction");
     expect(result.sourceEndpoint).toContain(`token=${CONTRACT}`);
     expect(result.raw).toMatchObject({ verified_tx: TX_A, tier: "high_conviction" });
   });
 
   it("rejects a malformed tx hash the same way the server does (400)", async () => {
     const client = new X402IntelligenceClient({ endpointUrl: baseUrl });
-    await expect(client.checkToken(CONTRACT, MALFORMED_TX)).rejects.toThrow(/malformed/i);
+    await expect(client.invoke(CONTRACT, MALFORMED_TX)).rejects.toThrow(/malformed/i);
   });
 
   it("rejects reuse of an already-used tx hash (409, single-use)", async () => {
     const client = new X402IntelligenceClient({ endpointUrl: baseUrl });
-    await client.checkToken(CONTRACT, TX_B);
-    await expect(client.checkToken(CONTRACT, TX_B)).rejects.toThrow(/already used|single-use/i);
+    await client.invoke(CONTRACT, TX_B);
+    await expect(client.invoke(CONTRACT, TX_B)).rejects.toThrow(/already used|single-use/i);
   });
 });
 
@@ -69,9 +69,9 @@ describe("X402IntelligenceClient retry/UNKNOWN handling", () => {
       );
 
     const client = new X402IntelligenceClient({ endpointUrl: "http://example.invalid/api/evaluate", baseDelayMs: 1 });
-    const result = await client.checkToken(CONTRACT, TX_A);
+    const result = await client.invoke(CONTRACT, TX_A);
 
-    expect(result.tier).toBe("high_conviction");
+    expect(result.output).toBe("high_conviction");
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -83,7 +83,7 @@ describe("X402IntelligenceClient retry/UNKNOWN handling", () => {
 
     const client = new X402IntelligenceClient({ endpointUrl: "http://example.invalid/api/evaluate", baseDelayMs: 1 });
 
-    await expect(client.checkToken(CONTRACT, TX_A)).rejects.toBeInstanceOf(IntelligenceResultUnrecoverableError);
+    await expect(client.invoke(CONTRACT, TX_A)).rejects.toBeInstanceOf(IntelligenceResultUnrecoverableError);
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -93,7 +93,7 @@ describe("X402IntelligenceClient retry/UNKNOWN handling", () => {
 
     const client = new X402IntelligenceClient({ endpointUrl: "http://example.invalid/api/evaluate", baseDelayMs: 1 });
 
-    await expect(client.checkToken(CONTRACT, TX_A)).rejects.toThrow(/already used|single-use/i);
+    await expect(client.invoke(CONTRACT, TX_A)).rejects.toThrow(/already used|single-use/i);
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });

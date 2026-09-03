@@ -60,7 +60,7 @@ Proven end-to-end on Sepolia by `scripts/live-escalation-resume-demo.ts`.
 Residual limitation: the pending-request tracking map in `pollLoop.ts` is
 in-memory only, same as `lastProcessedBlock` — a process restart loses
 track of any request that was pending at the time, and a naive manual
-retry (`handleTokenQuery` again for the same contract) still does not
+retry (`handleJobQuery` again for the same contract) still does not
 resume it — it calls `requestPayment` fresh, creating a **new** pending
 request if still above threshold. No persistence for outstanding pending
 requests exists yet, mirroring the same deliberate choice not to widen
@@ -110,13 +110,14 @@ requests exists yet, mirroring the same deliberate choice not to widen
   process restart starts over from whatever `startBlock` it's given. No
   Sibyl Memory HOT-state integration for this yet — deliberately kept out
   of scope to avoid widening `MemoryPort` for something that isn't the
-  gate's judged mechanism (that's the token-verdict cache, which does
-  survive restarts by design).
+  gate's judged mechanism (that's the job cache — `recallJob`/`rememberJob`,
+  generalized from what used to be called the token-verdict cache — which
+  does survive restarts by design).
 
 ## Gateway (Direction B) — Coral as a paid service for other agents
 
 `handleGatewayQuery` (`src/decisionCore.ts`) lets another agent pay Coral
-over Ping for the same lookup `handleTokenQuery` already does for Coral's
+over Ping for the same lookup `handleJobQuery` already does for Coral's
 own use — see `PLAN.md`'s "Gateway direction" entry for the design.
 
 - **Check-then-mark race on a reused tx hash.** `wasPaymentConsumed` is
@@ -131,7 +132,7 @@ own use — see `PLAN.md`'s "Gateway direction" entry for the design.
   already allows. Closing it fully would need a single atomic
   check-and-mark primitive in Sibyl Memory, which doesn't exist today.
 - **No refund on a downstream failure.** `markPaymentConsumed` runs
-  *before* the delegated `handleTokenQuery` call, closing the replay
+  *before* the delegated `handleJobQuery` call, closing the replay
   window immediately. If that downstream call then throws (the same
   `IntelligenceCheckFailedAfterPaymentError`/`CacheWriteFailedAfterPaymentError`
   class already documented above) or resolves to `pending_approval`, the
@@ -171,7 +172,7 @@ for the verified SDK facts this was built against.
   means a dropped connection mid-`submit()` needs a human to check
   whether it actually landed before deciding to resend.
 - **Same "dangerous ordering" gap as the HTTP gateway and Ping's
-  `finishAfterPayment` path.** If `handleTokenQuery` throws after Coral's
+  `finishAfterPayment` path.** If `handleJobQuery` throws after Coral's
   own `SpendGuard`-gated payment to Sibyl already went out but before a
   tier is cached, the ACP job is left funded-but-unsubmitted — logged
   loudly, not silently retried. The buyer's escrowed funds aren't lost
@@ -208,7 +209,7 @@ for the verified SDK facts this was built against.
   Policy is per-client, per-call, driven by `docs/API_NOTES.md`'s
   three-state (CONFIRMED/FAILED/UNKNOWN) model:
   - `SibylMemoryClient`: reads blind-retry on a transport failure; writes
-    don't blind-resend — `rememberTokenVerdict` reconnects and re-reads via
+    don't blind-resend — `rememberJob` reconnects and re-reads via
     `memory_recall` before deciding whether to resend; `recordEvent` never
     retries at all (no idempotency key on a journal append — a duplicate
     entry would be worse than one lost entry).

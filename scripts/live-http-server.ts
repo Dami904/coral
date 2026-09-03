@@ -30,7 +30,7 @@ import { createServer } from "node:http";
 import { loadConfig } from "../src/config.js";
 import { createHttpGatewayListener } from "../src/http/httpGatewayServer.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
-import { makeChainClient, makeMemoryClient, startMockX402Server } from "./lib/liveHarness.js";
+import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID, startMockX402Server } from "./lib/liveHarness.js";
 
 const PORT = Number(process.env["HTTP_PORT"] ?? 8787);
 const PRICE_USDC_6DP = 250_000n; // matches the real /api/evaluate price
@@ -52,6 +52,7 @@ async function main() {
       payTo: config.vendorPayTo,
       priceUsdc6dp: PRICE_USDC_6DP,
       staleWindowMs: 60 * 60 * 1000,
+      hiredAgentId: SIBYL_HIRED_AGENT_ID,
     }),
   );
 

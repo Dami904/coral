@@ -54,13 +54,16 @@ describe("usdc6dpToDollars", () => {
 });
 
 describe("formatAcpDeliverable", () => {
-  it("serializes a cache_hit outcome's tier as the job deliverable", () => {
-    const deliverable = formatAcpDeliverable({ outcome: "cache_hit", tier: "high_conviction", checkedAt: "2026-01-01T00:00:00.000Z" });
+  it("serializes a cache_hit outcome's output as the job deliverable's tier field", () => {
+    // Input uses the core's generic `output` field; the deliverable JSON
+    // keeps `tier` — proving the internal->external edge mapping, not just
+    // that both sides got renamed identically.
+    const deliverable = formatAcpDeliverable({ outcome: "cache_hit", output: "high_conviction", checkedAt: "2026-01-01T00:00:00.000Z" });
     expect(JSON.parse(deliverable)).toEqual({ tier: "high_conviction", note: "Conviction tier, not a safety/scam verdict." });
   });
 
-  it("serializes a paid outcome's tier the same way, dropping the tx hash from the deliverable itself", () => {
-    const deliverable = formatAcpDeliverable({ outcome: "paid", tier: "low_conviction", txHash: "0xaa" });
+  it("serializes a paid outcome's output the same way, dropping the tx hash from the deliverable itself", () => {
+    const deliverable = formatAcpDeliverable({ outcome: "paid", output: "low_conviction", txHash: "0xaa" });
     expect(JSON.parse(deliverable)).toEqual({ tier: "low_conviction", note: "Conviction tier, not a safety/scam verdict." });
   });
 });

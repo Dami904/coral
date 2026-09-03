@@ -22,13 +22,13 @@
  * SpendGuard should be paying on for this run.
  */
 import { loadConfig } from "../src/config.js";
-import { handleGatewayQuery, handleTokenQuery, resumeAfterApproval } from "../src/decisionCore.js";
+import { handleGatewayQuery, handleJobQuery, resumeAfterApproval } from "../src/decisionCore.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
 import { PingChainClient } from "../src/ping/pingChainClient.js";
 import { runPollLoop } from "../src/ping/pollLoop.js";
 import { extractGatewayRequest } from "../src/ping/pollOnce.js";
 import { SpendGuardIncomingPaymentVerifier } from "../src/gateway/incomingPaymentVerifier.js";
-import { makeChainClient, makeMemoryClient } from "./lib/liveHarness.js";
+import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID } from "./lib/liveHarness.js";
 
 const POLL_INTERVAL_MS = 15_000;
 const PRICE_USDC_6DP = 250_000n; // matches the real /api/evaluate price
@@ -73,7 +73,8 @@ async function main() {
       pollIntervalMs: POLL_INTERVAL_MS,
       startBlock,
       handle: (contract, requester) =>
-        handleTokenQuery(
+        handleJobQuery(
+          SIBYL_HIRED_AGENT_ID,
           contract,
           {
             memory,
@@ -86,7 +87,7 @@ async function main() {
           requester,
         ),
       resumePending: (contract, requestId, fromBlock, requester) =>
-        resumeAfterApproval(contract, requestId, fromBlock, { memory, intelligence, chain, now: () => new Date() }, requester),
+        resumeAfterApproval(SIBYL_HIRED_AGENT_ID, contract, requestId, fromBlock, { memory, intelligence, chain, now: () => new Date() }, requester),
       // Direction B: a message carrying both a contract address and a
       // payment tx hash is served as a paid gateway request instead of the
       // free one above. pending_approval outcomes from this path are
@@ -94,7 +95,7 @@ async function main() {
       // path's — see src/ping/pollOnce.ts.
       extractGatewayRequest,
       handleGateway: (contract, txHash) =>
-        handleGatewayQuery(contract, txHash, {
+        handleGatewayQuery(SIBYL_HIRED_AGENT_ID, contract, txHash, {
           memory,
           chain,
           intelligence,

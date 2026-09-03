@@ -18,8 +18,16 @@ import { SpendGuardChainClient, SPEND_GUARD_ABI } from "../../src/chain/spendGua
 import { SibylMemoryClient } from "../../src/memory/sibylMemoryClient.js";
 import { withRetry } from "../../src/lib/retry.js";
 import { requestHandler } from "../../mock-x402-server/server.mjs";
+import type { HiredAgentId } from "../../src/types.js";
 
 export type LiveConfig = ReturnType<typeof loadConfig>;
+
+/** The one real hired-agent integration every live script uses today —
+ * centralized so it's not duplicated (and doesn't drift) across every
+ * scripts/live-*.ts file. See docs/API_NOTES.md's generalization note:
+ * the core (decisionCore.ts) no longer assumes this is the only possible
+ * hired agent, it's just the only one actually wired up. */
+export const SIBYL_HIRED_AGENT_ID: HiredAgentId = "sibyl-conviction-check";
 
 /** Deletes a pre-existing local memory DB so a harness starts from a known
  * cold state. No-ops if memoryDbPath isn't set or the file doesn't exist —

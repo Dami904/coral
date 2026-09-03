@@ -116,7 +116,17 @@ All three read secrets from `/etc/coral/coral.env` (never the repo's own
 sudo bash /opt/coral/deploy/setup.sh   # re-runs safely; git pull, reinstall, rebuild
 sudo systemctl restart coral-http-server coral-ping-listener
 ```
-The memory DB lives outside `/opt/coral`, so this never touches it.
+The memory DB lives outside `/opt/coral`, so this never touches the file
+itself — but **one specific redeploy (2026-09-04, the job-cache
+generalization) changes what's *inside* it**: the Sibyl Memory category
+the job cache writes under changed from the old fixed `"token_verdict"`
+to `hiredAgentId` (`sibyl-conviction-check` for this deployment, per
+`scripts/lib/liveHarness.ts`). Existing cached entries under the old
+category become unreachable — the next `/check` for a contract that was
+already cached pays again, same effect as deleting memory (an
+already-tested, understood event here), not data loss or a bug. One-time,
+already applied to this deployment; not a recurring concern for future
+redeploys.
 
 **If the VM's public IP changes** (a new Elastic IP, a replaced instance),
 `setup.sh` re-derives the nip.io hostname and rewrites `/etc/caddy/Caddyfile`

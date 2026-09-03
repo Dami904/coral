@@ -7,9 +7,9 @@
  * Run: pnpm live:day3-smoke
  */
 import { loadConfig } from "../src/config.js";
-import { handleTokenQuery } from "../src/decisionCore.js";
+import { handleJobQuery } from "../src/decisionCore.js";
 import { StubIntelligenceClient } from "../src/intelligence/stubIntelligenceClient.js";
-import { makeChainClient, makeMemoryClient, resetMemoryDb } from "./lib/liveHarness.js";
+import { makeChainClient, makeMemoryClient, resetMemoryDb, SIBYL_HIRED_AGENT_ID } from "./lib/liveHarness.js";
 
 const TEST_CONTRACT = "0x000000000000000000000000000000c0ffee01";
 
@@ -35,14 +35,14 @@ async function main() {
   };
 
   console.log(`[smoke] call 1 (expect cache miss -> real testnet payment) for ${TEST_CONTRACT}`);
-  const first = await handleTokenQuery(TEST_CONTRACT, deps);
+  const first = await handleJobQuery(SIBYL_HIRED_AGENT_ID, TEST_CONTRACT, deps);
   console.log("[smoke] result 1:", first);
   if (first.outcome !== "paid") {
     throw new Error(`expected outcome "paid" on first call, got "${first.outcome}"`);
   }
 
   console.log(`[smoke] call 2 (expect cache hit -> zero payment) for ${TEST_CONTRACT}`);
-  const second = await handleTokenQuery(TEST_CONTRACT, deps);
+  const second = await handleJobQuery(SIBYL_HIRED_AGENT_ID, TEST_CONTRACT, deps);
   console.log("[smoke] result 2:", second);
   if (second.outcome !== "cache_hit") {
     throw new Error(`expected outcome "cache_hit" on second call, got "${second.outcome}"`);

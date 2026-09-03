@@ -655,3 +655,56 @@ Files: `contracts/SpendGuard.sol`, `contracts/MockUSDC.sol`,
   decision from the hardening pass above needs to be made before this.
 - **Day 10**: buffer, submit, two build-log posts tagging @sibylcap and
   Base.
+- **Generalizing the job cache beyond Sibyl** (2026-09-04): the core
+  (`handleTokenQuery`, `TokenVerdictRecord`, `MemoryPort.recallTokenVerdict`/
+  `rememberTokenVerdict`, `IntelligencePort.checkToken`) was hardcoded to
+  one hired agent's shape (contract address in, Sibyl conviction tier
+  out) since Day 1's original data-model sketch above — never a drift,
+  the original design just never grew past the one integration that got
+  built. Generalized so a future different hired-agent integration is
+  architecturally possible without another rearchitecture: `handleTokenQuery`
+  → `handleJobQuery(hiredAgentId, input, deps, requester?)`,
+  `TokenVerdictRecord` → `JobRecord`, `IntelligencePort.checkToken` →
+  `invoke(input, paymentTxHash): Promise<{output, raw, sourceEndpoint}>`,
+  the fixed `token_verdict` memory category replaced by a caller-supplied
+  `hiredAgentId` (`sibyl-conviction-check` for the one real integration
+  today, centralized in `scripts/lib/liveHarness.ts`).
+  - Compiler-guided rename, same proven approach as the earlier
+    `verdict`→`tier` rename (see "Naming/framing hardening" above): change
+    the types first, let `tsc --noEmit` turn the whole build red, fix
+    every call site it points at. Touched all three entry points (HTTP
+    gateway, Ping, ACP), all `scripts/live-*.ts` harnesses, and every
+    test file with a hand-written port fake — no shared fixture helper
+    exists in this codebase, so `test/decisionCore.test.ts` and
+    `test/http/httpGatewayServer.test.ts` each got the same mechanical
+    edit independently, matching how the prior rename handled it.
+  - **Deliberate scope boundary**: internal generalization only, external
+    wire shapes unchanged. `GET /check`'s JSON response and ACP's job
+    deliverable both still say `tier`, mapped explicitly at each entry
+    point's own response-building edge — the live, public HTTP gateway
+    and its deployed frontend widget (`coral-landing/index.html`, reading
+    `data.tier`) depend on that exact shape, and propagating the rename
+    to the wire level had zero architectural payoff.
+  - A `reliability-auditor`-adjacent design-review pass (a dedicated Plan
+    agent, since this touched the most heavily-tested part of the
+    codebase) caught real issues before implementation: a pending-escalation
+    key collision risk across hired agents sharing the same input space
+    (fixed by composing `hiredAgentId` into the underlying MCP key inside
+    `SibylMemoryClient`, not just the port signature), and confirmed
+    `httpGatewayServer.ts`'s response construction needed to become an
+    explicit field-by-field build rather than `{...outcome}` — a blind
+    spread would have leaked the new `output` field name into the live
+    JSON response and silently broken the deployed widget.
+  - Verified live, not just by the type checker: re-ran
+    `pnpm live:deletion-test` and `pnpm live:day5-smoke` against the real
+    deployed Base Sepolia `SpendGuard` after the change — cache miss →
+    real payment → cache hit → delete → real payment again, all still
+    correct under the new `hiredAgentId`-scoped category. `pnpm lint &&
+    pnpm typecheck && pnpm build && pnpm test` (143 tests) and
+    `forge test` (56 tests) all green.
+  - Real, accepted consequence: existing Sibyl Memory entries under the
+    old fixed `token_verdict` category become unreachable after this
+    deploys — the same effect as deleting memory (an already-tested,
+    understood event this project is judged on), not data loss. See
+    `docs/DEPLOYMENT.md`'s redeploy section and `docs/API_NOTES.md`'s
+    generalization entry for the full detail.

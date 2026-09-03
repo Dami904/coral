@@ -11,7 +11,7 @@
  * Run: pnpm live:escalation-resume-demo
  */
 import { loadConfig } from "../src/config.js";
-import { handleTokenQuery, resumeAfterApproval } from "../src/decisionCore.js";
+import { handleJobQuery, resumeAfterApproval } from "../src/decisionCore.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
 import {
   makeChainClient,
@@ -19,6 +19,7 @@ import {
   makeOwnerClients,
   ownerApproveAndWait,
   resetMemoryDb,
+  SIBYL_HIRED_AGENT_ID,
   startMockX402Server,
 } from "./lib/liveHarness.js";
 
@@ -53,7 +54,7 @@ async function main() {
     console.log(
       `[escalation-resume] call 1: propose ${ESCALATION_AMOUNT_USDC_6DP.toString()} (above threshold) for ${TEST_CONTRACT}`,
     );
-    const first = await handleTokenQuery(TEST_CONTRACT, deps);
+    const first = await handleJobQuery(SIBYL_HIRED_AGENT_ID, TEST_CONTRACT, deps);
     console.log("[escalation-resume] result 1:", first);
     if (first.outcome !== "pending_approval") {
       throw new Error(
@@ -86,7 +87,7 @@ async function main() {
     // treating the first still_pending as a failure.
     let resumed: Awaited<ReturnType<typeof resumeAfterApproval>> | undefined;
     for (let attempt = 1; attempt <= 5; attempt++) {
-      resumed = await resumeAfterApproval(TEST_CONTRACT, first.requestId, first.fromBlock, {
+      resumed = await resumeAfterApproval(SIBYL_HIRED_AGENT_ID, TEST_CONTRACT, first.requestId, first.fromBlock, {
         memory,
         intelligence,
         chain,
@@ -101,7 +102,7 @@ async function main() {
     }
 
     console.log("[escalation-resume] call 3: same contract, expect cache hit -> zero payment, zero HTTP call");
-    const third = await handleTokenQuery(TEST_CONTRACT, deps);
+    const third = await handleJobQuery(SIBYL_HIRED_AGENT_ID, TEST_CONTRACT, deps);
     console.log("[escalation-resume] result 3:", third);
     if (third.outcome !== "cache_hit") {
       throw new Error(`expected "cache_hit" on the third call, got "${third.outcome}"`);

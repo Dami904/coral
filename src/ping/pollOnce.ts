@@ -144,13 +144,13 @@ export function extractGatewayRequest(content: string): GatewayRequest | null {
 export function defaultFormatReply(outcome: PollReplyOutcome): string {
   switch (outcome.outcome) {
     case "cache_hit":
-      return `Conviction tier: ${outcome.tier} (cached, checked ${outcome.checkedAt}). Not a safety/scam verdict.`;
+      return `Conviction tier: ${outcome.output} (cached, checked ${outcome.checkedAt}). Not a safety/scam verdict.`;
     case "paid":
-      return `Conviction tier: ${outcome.tier} (fresh check, tx ${outcome.txHash}). Not a safety/scam verdict.`;
+      return `Conviction tier: ${outcome.output} (fresh check, tx ${outcome.txHash}). Not a safety/scam verdict.`;
     case "pending_approval":
       return `That check needs human sign-off first (request #${outcome.requestId.toString()}) — no funds moved yet.`;
     case "resumed":
-      return `Conviction tier: ${outcome.tier} (approved and completed, tx ${outcome.txHash}). Not a safety/scam verdict.`;
+      return `Conviction tier: ${outcome.output} (approved and completed, tx ${outcome.txHash}). Not a safety/scam verdict.`;
     case "resumed_rejected":
       return `The check for that request (#${outcome.requestId.toString()}) was rejected by the owner — no funds moved.`;
     case "blocked":

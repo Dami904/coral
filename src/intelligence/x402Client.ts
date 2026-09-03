@@ -9,25 +9,31 @@ export type X402ClientConfig = {
    * needs overriding outside tests. */
   maxAttempts?: number;
   baseDelayMs?: number;
+  /** Label for error context only (IntelligenceResultUnrecoverableError) —
+   * this class is always "the Sibyl integration" regardless of who
+   * instantiates it, so a sane default covers every real call site. */
+  hiredAgentId?: string;
 };
 
 /**
- * Real x402 directTx client for Sibyl's /api/evaluate. The payment
- * (SpendGuard.requestPayment) has already happened by the time checkToken
+ * Real x402 directTx client for Sibyl's /api/evaluate — the one real
+ * IntelligencePort implementation this codebase has. The payment
+ * (SpendGuard.requestPayment) has already happened by the time invoke
  * runs — this only ever relays the resulting tx hash via X-PAYMENT-TX and
- * reads back the tier, per docs/API_NOTES.md's verified request shape
- * (`?token=<contract>` query param, discovered via the endpoint's own
+ * reads back the tier (returned as the port's generic `output` field),
+ * per docs/API_NOTES.md's verified request shape (`?token=<contract>`
+ * query param, discovered via the endpoint's own
  * `extensions.bazaar.info.inputSchema`, not assumed).
  */
 export class X402IntelligenceClient implements IntelligencePort {
   constructor(private readonly config: X402ClientConfig) {}
 
-  async checkToken(
-    contract: string,
+  async invoke(
+    input: string,
     paymentTxHash: `0x${string}`,
-  ): Promise<{ tier: string; raw: unknown; sourceEndpoint: string }> {
+  ): Promise<{ output: string; raw: unknown; sourceEndpoint: string }> {
     const url = new URL(this.config.endpointUrl);
-    url.searchParams.set("token", contract);
+    url.searchParams.set("token", input);
 
     let attempt = 0;
     // A request timeout or connection drop while relaying X-PAYMENT-TX is
@@ -59,7 +65,7 @@ export class X402IntelligenceClient implements IntelligencePort {
         // original relay almost certainly succeeded server-side and its
         // response was what got lost, not the request. There is no verdict
         // payload left to recover from this call.
-        throw new IntelligenceResultUnrecoverableError(contract, paymentTxHash);
+        throw new IntelligenceResultUnrecoverableError(this.config.hiredAgentId ?? "sibyl-conviction-check", input, paymentTxHash);
       }
       throw new Error(`x402 evaluate: tx hash already used (single-use, per docs/API_NOTES.md): ${await response.text()}`);
     }
@@ -68,7 +74,7 @@ export class X402IntelligenceClient implements IntelligencePort {
     }
 
     const raw: unknown = await response.json();
-    return { tier: X402IntelligenceClient.deriveTier(raw), raw, sourceEndpoint: url.toString() };
+    return { output: X402IntelligenceClient.deriveTier(raw), raw, sourceEndpoint: url.toString() };
   }
 
   /**

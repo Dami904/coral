@@ -16,12 +16,12 @@
  *   requirement message  -> validate offering + parse {"token":"0x..."},
  *                           reject on either failure, else setBudget()
  *   job.funded           -> run Coral's own memory-then-pay check
- *                           (handleTokenQuery — the payment already
+ *                           (handleJobQuery — the payment already
  *                           arrived via ACP's escrow, so this is the
  *                           SAME direction as Coral's own outbound
  *                           SpendGuard-gated spend to Sibyl, not the
  *                           Ping-gateway incoming-payment-verification
- *                           path) -> submit() the tier, or track it for
+ *                           path) -> submit() the result, or track it for
  *                           the resume-poll loop below if it needs
  *                           human sign-off first
  *   job.completed/.rejected/.expired -> log, drop any tracked state
@@ -36,12 +36,12 @@
 import { baseSepolia } from "viem/chains";
 import { AcpAgent, AssetToken, PrivyAlchemyEvmProviderAdapter, type JobRoomEntry, type JobSession } from "@virtuals-protocol/acp-node-v2";
 import { loadConfig } from "../src/config.js";
-import { handleTokenQuery, resumeAfterApproval, type HandleTokenQueryDeps } from "../src/decisionCore.js";
+import { handleJobQuery, resumeAfterApproval, type HandleTokenQueryDeps } from "../src/decisionCore.js";
 import type { ResumableChainPort } from "../src/types.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
 import { formatAcpDeliverable, parseAcpRequirement } from "../src/acp/acpProvider.js";
 import { createKeyedLock } from "../src/lib/keyedLock.js";
-import { makeChainClient, makeMemoryClient, startMockX402Server } from "./lib/liveHarness.js";
+import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID, startMockX402Server } from "./lib/liveHarness.js";
 
 // What Coral pays SpendGuard/Sibyl for a fresh check — matches the real
 // Sibyl price, same as live-http-server.ts. NOT what an ACP buyer pays
@@ -94,7 +94,7 @@ async function main(): Promise<void> {
 
   // SpendGuardChainClient implements both ChainPort and ResumableChainPort;
   // this widened alias keeps deps.chain typed as ResumableChainPort so the
-  // same `deps` object satisfies both handleTokenQuery's and
+  // same `deps` object satisfies both handleJobQuery's and
   // resumeAfterApproval's deps shapes, same pattern as httpGatewayServer.ts's
   // HttpGatewayDeps.
   const deps: HandleTokenQueryDeps & { chain: ResumableChainPort } = {
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
   // Serializes per-jobId work (runCheck on job.funded, and each job's own
   // resume-poll attempt below) within this process. Without this, a
   // duplicate/replayed job.funded SSE event, or a resume-poll tick that
-  // outruns RESUME_POLL_MS, could run handleTokenQuery/resumeAfterApproval
+  // outruns RESUME_POLL_MS, could run handleJobQuery/resumeAfterApproval
   // + session.submit() twice for one logical job — a real double-payment/
   // double-submit bug caught by review, not by running against a real
   // job (no counterparty exists yet). Same mechanism as
@@ -233,7 +233,7 @@ async function main(): Promise<void> {
   async function runCheck(session: JobSession, token: `0x${string}`): Promise<void> {
     let outcome;
     try {
-      outcome = await handleTokenQuery(token, deps);
+      outcome = await handleJobQuery(SIBYL_HIRED_AGENT_ID, token, deps);
     } catch (err) {
       // Same "dangerous ordering" shape as the HTTP gateway (IntelligenceCheckFailedAfterPaymentError):
       // Coral's own SpendGuard spend to Sibyl may already have happened even
@@ -244,15 +244,15 @@ async function main(): Promise<void> {
       // re-fire) or expire and refund the buyer — the fund is not lost either
       // way, but Coral's own Sibyl spend (if it happened) is not recovered
       // here. See docs/LIMITATIONS.md.
-      console.error(`[acp-provider] [job ${session.jobId}] handleTokenQuery threw`, { token, err });
+      console.error(`[acp-provider] [job ${session.jobId}] handleJobQuery threw`, { token, err });
       await session.sendMessage("Internal error while checking this token — see provider logs.").catch(() => undefined);
       return;
     }
 
     if (outcome.outcome === "cache_hit" || outcome.outcome === "paid") {
-      await session.sendMessage(`Result ready: ${outcome.tier}`);
+      await session.sendMessage(`Result ready: ${outcome.output}`);
       await session.submit(formatAcpDeliverable(outcome));
-      console.log(`[acp-provider] [job ${session.jobId}] submitted deliverable (${outcome.outcome}, tier ${outcome.tier})`);
+      console.log(`[acp-provider] [job ${session.jobId}] submitted deliverable (${outcome.outcome}, output ${outcome.output})`);
       return;
     }
 
@@ -283,7 +283,7 @@ async function main(): Promise<void> {
         await withJobLock(jobId, async () => {
           if (!pendingApprovals.has(jobId)) return; // resolved by the queued-ahead attempt already
           try {
-            const resumed = await resumeAfterApproval(tracked.token, tracked.requestId, tracked.fromBlock, deps);
+            const resumed = await resumeAfterApproval(SIBYL_HIRED_AGENT_ID, tracked.token, tracked.requestId, tracked.fromBlock, deps);
             if (resumed.outcome === "still_pending") return;
             if (resumed.outcome === "rejected") {
               await tracked.session.reject("owner rejected the pending SpendGuard escalation");
@@ -299,9 +299,9 @@ async function main(): Promise<void> {
               console.error(`[acp-provider] [job ${jobId}] unexpected resume outcome`, resumed);
               return;
             }
-            await tracked.session.sendMessage(`Result ready: ${resumed.tier}`);
+            await tracked.session.sendMessage(`Result ready: ${resumed.output}`);
             await tracked.session.submit(formatAcpDeliverable(resumed));
-            console.log(`[acp-provider] [job ${jobId}] resumed + submitted (tier ${resumed.tier})`);
+            console.log(`[acp-provider] [job ${jobId}] resumed + submitted (output ${resumed.output})`);
             pendingApprovals.delete(jobId);
           } catch (err) {
             // Mirrors pollLoop.ts's resumePending catch: stays tracked, retried

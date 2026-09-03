@@ -4,6 +4,7 @@ import {
   type ChainPort,
   type GatewayPaymentOutcome,
   type HandleOutcome,
+  type HiredAgentId,
   type IncomingPaymentPort,
   type IntelligencePort,
   type MemoryPort,
@@ -51,31 +52,30 @@ type FinishAfterPaymentDeps = {
   now?: () => Date;
 };
 
-const CATEGORY = "token_verdict";
-
 /**
- * Shared tail for both a first-touch payment (handleTokenQuery's "sent"
+ * Shared tail for both a first-touch payment (handleJobQuery's "sent"
  * branch) and a resumed escalated payment (resumeAfterApproval, once
- * approved): run the intelligence check, cache the tier, journal the
+ * approved): run the intelligence check, cache the output, journal the
  * outcome. Kept in one place so the two hardened failure paths below stay
  * single-sourced instead of duplicated between the two callers.
  */
 async function finishAfterPayment(
-  contract: string,
+  hiredAgentId: HiredAgentId,
+  input: string,
   txHash: `0x${string}`,
   deps: FinishAfterPaymentDeps,
-  ref: { category: string; name: string },
   requester?: string,
 ): Promise<HandleOutcome> {
   const now = (deps.now ?? (() => new Date()))();
+  const ref = { category: hiredAgentId, name: input };
   const requesterField = requester ? { requester } : {};
 
   // Journal the payment fact BEFORE the intelligence call, so a failure
   // below still leaves a reconciliable record instead of a silent
   // paid-but-uncached gap (docs/API_NOTES.md).
-  let intel: Awaited<ReturnType<IntelligencePort["checkToken"]>>;
+  let intel: Awaited<ReturnType<IntelligencePort["invoke"]>>;
   try {
-    intel = await deps.intelligence.checkToken(contract, txHash);
+    intel = await deps.intelligence.invoke(input, txHash);
   } catch (err) {
     await recordEventBestEffort(
       deps.memory,
@@ -83,12 +83,13 @@ async function finishAfterPayment(
       { cache_hit: false, paid: true, tx_hash: txHash, intel_error: String(err), ...requesterField },
       ref,
     );
-    throw new IntelligenceCheckFailedAfterPaymentError(contract, txHash, err);
+    throw new IntelligenceCheckFailedAfterPaymentError(hiredAgentId, input, txHash, err);
   }
 
   try {
-    await deps.memory.rememberTokenVerdict(contract, {
-      tier: intel.tier,
+    await deps.memory.rememberJob(hiredAgentId, input, {
+      hiredAgentId,
+      output: intel.output,
       raw_response: intel.raw,
       checked_at: now.toISOString(),
       source_endpoint: intel.sourceEndpoint,
@@ -97,18 +98,18 @@ async function finishAfterPayment(
     await recordEventBestEffort(
       deps.memory,
       "decision",
-      { cache_hit: false, paid: true, tx_hash: txHash, tier: intel.tier, cache_write_error: String(err), ...requesterField },
+      { cache_hit: false, paid: true, tx_hash: txHash, output: intel.output, cache_write_error: String(err), ...requesterField },
       ref,
     );
-    throw new CacheWriteFailedAfterPaymentError(contract, txHash, err);
+    throw new CacheWriteFailedAfterPaymentError(hiredAgentId, input, txHash, err);
   }
 
   await deps.memory.recordEvent(
     "decision",
-    { cache_hit: false, paid: true, tx_hash: txHash, tier: intel.tier, ...requesterField },
+    { cache_hit: false, paid: true, tx_hash: txHash, output: intel.output, ...requesterField },
     ref,
   );
-  return { outcome: "paid", tier: intel.tier, txHash };
+  return { outcome: "paid", output: intel.output, txHash };
 }
 
 /**
@@ -116,6 +117,15 @@ async function finishAfterPayment(
  * one event, and memory is always consulted before any chain call — the
  * cold-start-recall / deletion-test gate this whole project is judged on
  * depends on that ordering being real, not just documented.
+ *
+ * Generalized beyond Sibyl's token-conviction check: `hiredAgentId` names
+ * which hired agent this call consults (today, always the one real
+ * integration — Sibyl's x402 endpoint — but the core no longer assumes
+ * that), and `input` is whatever that agent needs to do the job (a
+ * contract address, for the one real integration). Both together form the
+ * Sibyl Memory cache key (`category: hiredAgentId, name: input`), so two
+ * different hired agents' answers for what looks like "the same" input
+ * never collide.
  *
  * `requester` is optional and purely descriptive — never used for any
  * decision (cache/policy/payment logic is identical regardless of who's
@@ -125,28 +135,29 @@ async function finishAfterPayment(
  * PLAN.md's original data-model sketch proposed but the code never grew
  * until now.
  */
-export async function handleTokenQuery(
-  contract: string,
+export async function handleJobQuery(
+  hiredAgentId: HiredAgentId,
+  input: string,
   deps: HandleTokenQueryDeps,
   requester?: string,
 ): Promise<HandleOutcome> {
   const now = (deps.now ?? (() => new Date()))();
-  const ref = { category: CATEGORY, name: contract };
+  const ref = { category: hiredAgentId, name: input };
   const requesterField = requester ? { requester } : {};
 
-  const cached = await deps.memory.recallTokenVerdict(contract);
+  const cached = await deps.memory.recallJob(hiredAgentId, input);
   if (cached && now.getTime() - Date.parse(cached.checked_at) < deps.staleWindowMs) {
     await deps.memory.recordEvent("decision", { cache_hit: true, paid: false, ...requesterField }, ref);
-    return { outcome: "cache_hit", tier: cached.tier, checkedAt: cached.checked_at };
+    return { outcome: "cache_hit", output: cached.output, checkedAt: cached.checked_at };
   }
 
-  // An earlier call for this contract may already have escalated and be
+  // An earlier call for this input may already have escalated and be
   // awaiting ownerApprove/ownerReject — SpendGuard's own rate/budget rules
   // don't count a pending request until it's approved, so without this
   // check a repeat query (Ping or the free HTTP path) would create a new
   // on-chain proposal every time instead of pointing back at the one
   // already in flight. See MemoryPort.getPendingEscalation.
-  const existingPending = await deps.memory.getPendingEscalation(contract);
+  const existingPending = await deps.memory.getPendingEscalation(hiredAgentId, input);
   if (existingPending) {
     await deps.memory.recordEvent(
       "decision",
@@ -174,7 +185,7 @@ export async function handleTokenQuery(
   }
 
   if (payment.kind === "pending") {
-    await deps.memory.setPendingEscalation(contract, payment.requestId, payment.blockNumber);
+    await deps.memory.setPendingEscalation(hiredAgentId, input, payment.requestId, payment.blockNumber);
     await deps.memory.recordEvent(
       "decision",
       { cache_hit: false, paid: false, pending_request_id: payment.requestId.toString(), ...requesterField },
@@ -184,7 +195,7 @@ export async function handleTokenQuery(
   }
 
   // payment.kind === "sent": funds moved.
-  return finishAfterPayment(contract, payment.txHash, deps, ref, requester);
+  return finishAfterPayment(hiredAgentId, input, payment.txHash, deps, requester);
 }
 
 export type HandleGatewayQueryDeps = HandleTokenQueryDeps & {
@@ -196,15 +207,16 @@ export type HandleGatewayQueryDeps = HandleTokenQueryDeps & {
 
 /**
  * Direction B: another agent pays *Coral* (not the other way around) for
- * the same conviction-tier lookup handleTokenQuery already does for
- * Coral's own use. Verifies + consumes the caller's claimed payment first
- * (replay-protected via MemoryPort — see PLAN.md's "Gateway direction"
- * entry), then delegates to the exact same handleTokenQuery path: a cache
- * hit is pure margin on the gateway fee, a miss has Coral pay Sibyl out
- * of the same SpendGuard treasury the fee just funded.
+ * the same lookup handleJobQuery already does for Coral's own use.
+ * Verifies + consumes the caller's claimed payment first (replay-protected
+ * via MemoryPort — see PLAN.md's "Gateway direction" entry), then
+ * delegates to the exact same handleJobQuery path: a cache hit is pure
+ * margin on the gateway fee, a miss has Coral pay the hired agent out of
+ * the same SpendGuard treasury the fee just funded.
  */
 export async function handleGatewayQuery(
-  contract: string,
+  hiredAgentId: HiredAgentId,
+  input: string,
   paymentTxHash: `0x${string}`,
   deps: HandleGatewayQueryDeps,
 ): Promise<HandleOutcome | GatewayPaymentOutcome> {
@@ -230,7 +242,8 @@ export async function handleGatewayQuery(
   // replay window immediately — see PLAN.md for the accepted tradeoff
   // (a downstream failure burns this payment; a retry needs a fresh one).
   await deps.memory.markPaymentConsumed(paymentTxHash, {
-    contract,
+    hiredAgentId,
+    input,
     payer: verification.payer,
     amount: verification.amount.toString(),
     consumed_at: now.toISOString(),
@@ -239,7 +252,7 @@ export async function handleGatewayQuery(
   // The verified on-chain payer, not a self-reported identity — a
   // stronger "who asked" signal than a Ping sender address would be,
   // since it's the address that actually moved the funds.
-  return handleTokenQuery(contract, deps, verification.payer);
+  return handleJobQuery(hiredAgentId, input, deps, verification.payer);
 }
 
 export type ResumeAfterApprovalDeps = {
@@ -260,13 +273,14 @@ export type ResumeOutcome = HandleOutcome | { outcome: "still_pending" } | { out
  * normal "sent" payment goes through, via finishAfterPayment.
  */
 export async function resumeAfterApproval(
-  contract: string,
+  hiredAgentId: HiredAgentId,
+  input: string,
   requestId: bigint,
   fromBlock: bigint,
   deps: ResumeAfterApprovalDeps,
   requester?: string,
 ): Promise<ResumeOutcome> {
-  const ref = { category: CATEGORY, name: contract };
+  const ref = { category: hiredAgentId, name: input };
   const requesterField = requester ? { requester } : {};
   const resolution: PendingResolution = await deps.chain.checkPendingResolution(requestId, fromBlock);
 
@@ -275,8 +289,8 @@ export async function resumeAfterApproval(
   }
 
   if (resolution.kind === "rejected") {
-    await deps.memory.clearPendingEscalation(contract).catch((err: unknown) => {
-      console.error("resumeAfterApproval: clearPendingEscalation failed after a rejection — logging, not throwing", { contract, err });
+    await deps.memory.clearPendingEscalation(hiredAgentId, input).catch((err: unknown) => {
+      console.error("resumeAfterApproval: clearPendingEscalation failed after a rejection — logging, not throwing", { hiredAgentId, input, err });
     });
     await recordEventBestEffort(
       deps.memory,
@@ -287,8 +301,8 @@ export async function resumeAfterApproval(
     return { outcome: "rejected" };
   }
 
-  await deps.memory.clearPendingEscalation(contract).catch((err: unknown) => {
-    console.error("resumeAfterApproval: clearPendingEscalation failed after approval — logging, not throwing", { contract, err });
+  await deps.memory.clearPendingEscalation(hiredAgentId, input).catch((err: unknown) => {
+    console.error("resumeAfterApproval: clearPendingEscalation failed after approval — logging, not throwing", { hiredAgentId, input, err });
   });
-  return finishAfterPayment(contract, resolution.txHash, deps, ref, requester);
+  return finishAfterPayment(hiredAgentId, input, resolution.txHash, deps, requester);
 }

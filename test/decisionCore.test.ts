@@ -1,26 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { handleGatewayQuery, handleTokenQuery, resumeAfterApproval } from "../src/decisionCore.js";
+import { handleGatewayQuery, handleJobQuery, resumeAfterApproval } from "../src/decisionCore.js";
 import type {
   ChainPort,
+  HiredAgentId,
   IncomingPaymentPort,
   IncomingPaymentVerification,
   IntelligencePort,
+  JobRecord,
   MemoryPort,
   PaymentOutcome,
   PendingResolution,
   ResumableChainPort,
-  TokenVerdictRecord,
 } from "../src/types.js";
 import { CacheWriteFailedAfterPaymentError, IntelligenceCheckFailedAfterPaymentError } from "../src/types.js";
 
 const CONTRACT = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+const HIRED_AGENT_ID: HiredAgentId = "sibyl-conviction-check";
 const VENDOR: `0x${string}` = "0x000000000000000000000000000000000000ea";
 const PRICE = 250_000n;
 const STALE_WINDOW_MS = 60 * 60 * 1000;
 const NOW = new Date("2026-08-26T12:00:00.000Z");
 
 function makeMemory(
-  recallResult: TokenVerdictRecord | null,
+  recallResult: JobRecord | null,
   opts: {
     rememberError?: Error;
     consumedTxHashes?: `0x${string}`[];
@@ -28,18 +30,18 @@ function makeMemory(
   } = {},
 ): MemoryPort & {
   calls: string[];
-  remembered: { contract: string; record: TokenVerdictRecord }[];
+  remembered: { hiredAgentId: HiredAgentId; input: string; record: JobRecord }[];
   events: { kind: string; body: Record<string, unknown>; ref: { category: string; name: string } }[];
   consumedPayments: { txHash: `0x${string}`; body: Record<string, unknown> }[];
-  pendingEscalationsSet: { contract: string; requestId: bigint; fromBlock: bigint }[];
+  pendingEscalationsSet: { hiredAgentId: HiredAgentId; input: string; requestId: bigint; fromBlock: bigint }[];
   pendingEscalationsCleared: string[];
 } {
   const calls: string[] = [];
-  const remembered: { contract: string; record: TokenVerdictRecord }[] = [];
+  const remembered: { hiredAgentId: HiredAgentId; input: string; record: JobRecord }[] = [];
   const events: { kind: string; body: Record<string, unknown>; ref: { category: string; name: string } }[] = [];
   const consumedPayments: { txHash: `0x${string}`; body: Record<string, unknown> }[] = [];
   const consumedTxHashes = new Set(opts.consumedTxHashes ?? []);
-  const pendingEscalationsSet: { contract: string; requestId: bigint; fromBlock: bigint }[] = [];
+  const pendingEscalationsSet: { hiredAgentId: HiredAgentId; input: string; requestId: bigint; fromBlock: bigint }[] = [];
   const pendingEscalationsCleared: string[] = [];
   let pendingEscalation = opts.pendingEscalation ?? null;
   return {
@@ -49,15 +51,15 @@ function makeMemory(
     consumedPayments,
     pendingEscalationsSet,
     pendingEscalationsCleared,
-    async recallTokenVerdict(contract) {
+    async recallJob(hiredAgentId, input) {
       calls.push("recall");
-      expect(contract).toBe(CONTRACT);
+      expect(input).toBe(CONTRACT);
       return recallResult;
     },
-    async rememberTokenVerdict(contract, record) {
+    async rememberJob(hiredAgentId, input, record) {
       calls.push("remember");
       if (opts.rememberError) throw opts.rememberError;
-      remembered.push({ contract, record });
+      remembered.push({ hiredAgentId, input, record });
     },
     async recordEvent(kind, body, ref) {
       calls.push("recordEvent");
@@ -76,15 +78,15 @@ function makeMemory(
       calls.push("getPendingEscalation");
       return pendingEscalation;
     },
-    async setPendingEscalation(contract, requestId, fromBlock) {
+    async setPendingEscalation(hiredAgentId, input, requestId, fromBlock) {
       calls.push("setPendingEscalation");
       pendingEscalation = { requestId, fromBlock };
-      pendingEscalationsSet.push({ contract, requestId, fromBlock });
+      pendingEscalationsSet.push({ hiredAgentId, input, requestId, fromBlock });
     },
-    async clearPendingEscalation(contract) {
+    async clearPendingEscalation(hiredAgentId, input) {
       calls.push("clearPendingEscalation");
       pendingEscalation = null;
-      pendingEscalationsCleared.push(contract);
+      pendingEscalationsCleared.push(input);
     },
   };
 }
@@ -110,7 +112,7 @@ function makeChain(
 }
 
 function makeIntelligence(
-  result: { tier: string; raw: unknown; sourceEndpoint: string } | Error,
+  result: { output: string; raw: unknown; sourceEndpoint: string } | Error,
 ): IntelligencePort & { calls: string[]; receivedTxHash: `0x${string}` | null } {
   const calls: string[] = [];
   let receivedTxHash: `0x${string}` | null = null;
@@ -119,9 +121,9 @@ function makeIntelligence(
     get receivedTxHash() {
       return receivedTxHash;
     },
-    async checkToken(contract, paymentTxHash) {
-      calls.push("checkToken");
-      expect(contract).toBe(CONTRACT);
+    async invoke(input, paymentTxHash) {
+      calls.push("invoke");
+      expect(input).toBe(CONTRACT);
       receivedTxHash = paymentTxHash;
       if (result instanceof Error) throw result;
       return result;
@@ -142,10 +144,11 @@ function makeIncomingPayment(
   };
 }
 
-describe("handleTokenQuery", () => {
+describe("handleJobQuery", () => {
   it("returns the cached tier and never touches the chain when the cache is fresh", async () => {
-    const cached: TokenVerdictRecord = {
-      tier: "safe",
+    const cached: JobRecord = {
+      hiredAgentId: HIRED_AGENT_ID,
+      output: "safe",
       raw_response: { ok: true },
       checked_at: new Date(NOW.getTime() - 5 * 60 * 1000).toISOString(),
       source_endpoint: "/api/evaluate",
@@ -154,7 +157,7 @@ describe("handleTokenQuery", () => {
     const chain = makeChain({ kind: "blocked", payTo: VENDOR, amount: PRICE, reason: "should never be called" });
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    const result = await handleTokenQuery(CONTRACT, {
+    const result = await handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
       memory,
       chain,
       intelligence,
@@ -164,7 +167,7 @@ describe("handleTokenQuery", () => {
       now: () => NOW,
     });
 
-    expect(result).toEqual({ outcome: "cache_hit", tier: "safe", checkedAt: cached.checked_at });
+    expect(result).toEqual({ outcome: "cache_hit", output: "safe", checkedAt: cached.checked_at });
     expect(chain.calls).toEqual([]);
     expect(intelligence.calls).toEqual([]);
     expect(memory.events).toHaveLength(1);
@@ -172,17 +175,18 @@ describe("handleTokenQuery", () => {
   });
 
   it("treats a stale cache entry as a miss and requests payment", async () => {
-    const stale: TokenVerdictRecord = {
-      tier: "safe",
+    const stale: JobRecord = {
+      hiredAgentId: HIRED_AGENT_ID,
+      output: "safe",
       raw_response: {},
       checked_at: new Date(NOW.getTime() - 2 * STALE_WINDOW_MS).toISOString(),
       source_endpoint: "/api/evaluate",
     };
     const memory = makeMemory(stale);
     const chain = makeChain({ kind: "sent", payTo: VENDOR, amount: PRICE, txHash: "0xaa" });
-    const intelligence = makeIntelligence({ tier: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
+    const intelligence = makeIntelligence({ output: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
 
-    const result = await handleTokenQuery(CONTRACT, {
+    const result = await handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
       memory,
       chain,
       intelligence,
@@ -199,9 +203,9 @@ describe("handleTokenQuery", () => {
   it("checks memory before ever calling the chain (non-negotiable invariant)", async () => {
     const memory = makeMemory(null);
     const chain = makeChain({ kind: "sent", payTo: VENDOR, amount: PRICE, txHash: "0xaa" });
-    const intelligence = makeIntelligence({ tier: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
+    const intelligence = makeIntelligence({ output: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
 
-    await handleTokenQuery(CONTRACT, {
+    await handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
       memory,
       chain,
       intelligence,
@@ -222,9 +226,9 @@ describe("handleTokenQuery", () => {
   it("requests exactly the configured price for the vendor address on a cache miss", async () => {
     const memory = makeMemory(null);
     const chain = makeChain({ kind: "sent", payTo: VENDOR, amount: PRICE, txHash: "0xaa" });
-    const intelligence = makeIntelligence({ tier: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
+    const intelligence = makeIntelligence({ output: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
 
-    await handleTokenQuery(CONTRACT, {
+    await handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
       memory,
       chain,
       intelligence,
@@ -242,7 +246,7 @@ describe("handleTokenQuery", () => {
     const chain = makeChain({ kind: "blocked", payTo: VENDOR, amount: PRICE, reason: "budget-window" });
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    const result = await handleTokenQuery(CONTRACT, {
+    const result = await handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
       memory,
       chain,
       intelligence,
@@ -263,7 +267,7 @@ describe("handleTokenQuery", () => {
     const chain = makeChain({ kind: "pending", payTo: VENDOR, amount: PRICE, requestId: 7n, txHash: "0xaa", blockNumber: 42n });
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    const result = await handleTokenQuery(CONTRACT, {
+    const result = await handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
       memory,
       chain,
       intelligence,
@@ -279,7 +283,7 @@ describe("handleTokenQuery", () => {
     expect(memory.events[0]).toMatchObject({
       body: { cache_hit: false, paid: false, pending_request_id: "7" },
     });
-    expect(memory.pendingEscalationsSet).toEqual([{ contract: CONTRACT, requestId: 7n, fromBlock: 42n }]);
+    expect(memory.pendingEscalationsSet).toEqual([{ hiredAgentId: HIRED_AGENT_ID, input: CONTRACT, requestId: 7n, fromBlock: 42n }]);
   });
 
   it("on a contract with an already-pending escalation: returns it directly and never proposes a second one", async () => {
@@ -293,7 +297,7 @@ describe("handleTokenQuery", () => {
     const chain = makeChain(new Error("should never be called — an existing pending escalation must short-circuit before this"));
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    const result = await handleTokenQuery(CONTRACT, {
+    const result = await handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
       memory,
       chain,
       intelligence,
@@ -314,9 +318,9 @@ describe("handleTokenQuery", () => {
   it("on a sent payment: checks intelligence, caches the tier, and journals the paid event", async () => {
     const memory = makeMemory(null);
     const chain = makeChain({ kind: "sent", payTo: VENDOR, amount: PRICE, txHash: "0xbeef" });
-    const intelligence = makeIntelligence({ tier: "unsafe", raw: { flagged: true }, sourceEndpoint: "/api/evaluate" });
+    const intelligence = makeIntelligence({ output: "unsafe", raw: { flagged: true }, sourceEndpoint: "/api/evaluate" });
 
-    const result = await handleTokenQuery(CONTRACT, {
+    const result = await handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
       memory,
       chain,
       intelligence,
@@ -326,13 +330,15 @@ describe("handleTokenQuery", () => {
       now: () => NOW,
     });
 
-    expect(result).toEqual({ outcome: "paid", tier: "unsafe", txHash: "0xbeef" });
+    expect(result).toEqual({ outcome: "paid", output: "unsafe", txHash: "0xbeef" });
     expect(intelligence.receivedTxHash).toBe("0xbeef");
     expect(memory.remembered).toEqual([
       {
-        contract: CONTRACT,
+        hiredAgentId: HIRED_AGENT_ID,
+        input: CONTRACT,
         record: {
-          tier: "unsafe",
+          hiredAgentId: HIRED_AGENT_ID,
+          output: "unsafe",
           raw_response: { flagged: true },
           checked_at: NOW.toISOString(),
           source_endpoint: "/api/evaluate",
@@ -340,7 +346,7 @@ describe("handleTokenQuery", () => {
       },
     ]);
     expect(memory.events.at(-1)).toMatchObject({
-      body: { cache_hit: false, paid: true, tx_hash: "0xbeef", tier: "unsafe" },
+      body: { cache_hit: false, paid: true, tx_hash: "0xbeef", output: "unsafe" },
     });
     expect(memory.events.at(-1)?.body).not.toHaveProperty("requester");
   });
@@ -349,9 +355,10 @@ describe("handleTokenQuery", () => {
     const REQUESTER = "0x00000000000000000000000000000000c0ffee";
     const memory = makeMemory(null);
     const chain = makeChain({ kind: "sent", payTo: VENDOR, amount: PRICE, txHash: "0xbeef" });
-    const intelligence = makeIntelligence({ tier: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
+    const intelligence = makeIntelligence({ output: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
 
-    await handleTokenQuery(
+    await handleJobQuery(
+      HIRED_AGENT_ID,
       CONTRACT,
       { memory, chain, intelligence, payTo: VENDOR, priceUsdc6dp: PRICE, staleWindowMs: STALE_WINDOW_MS, now: () => NOW },
       REQUESTER,
@@ -367,7 +374,7 @@ describe("handleTokenQuery", () => {
     const intelligence = makeIntelligence(boom);
 
     await expect(
-      handleTokenQuery(CONTRACT, {
+      handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
         memory,
         chain,
         intelligence,
@@ -387,19 +394,19 @@ describe("handleTokenQuery", () => {
 
   it("on a sent payment whose cache write then fails: journals the tx (with tier) before throwing", async () => {
     // Regression guard: an earlier version only logged-before-throw for an
-    // intelligence-check failure, not for rememberTokenVerdict itself —
+    // intelligence-check failure, not for rememberJob itself —
     // the more important case, since that's the write that actually
     // prevents a re-pay next time. Delete the try/catch around
-    // rememberTokenVerdict in decisionCore.ts and this test fails: the
+    // rememberJob in decisionCore.ts and this test fails: the
     // rejection changes to a bare "boom" instead of
     // CacheWriteFailedAfterPaymentError, and no event is recorded.
     const boom = new Error("SQLite disk full");
     const memory = makeMemory(null, { rememberError: boom });
     const chain = makeChain({ kind: "sent", payTo: VENDOR, amount: PRICE, txHash: "0xbeef" });
-    const intelligence = makeIntelligence({ tier: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
+    const intelligence = makeIntelligence({ output: "safe", raw: {}, sourceEndpoint: "/api/evaluate" });
 
     await expect(
-      handleTokenQuery(CONTRACT, {
+      handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
         memory,
         chain,
         intelligence,
@@ -413,7 +420,7 @@ describe("handleTokenQuery", () => {
     expect(memory.remembered).toEqual([]);
     expect(memory.events).toHaveLength(1);
     expect(memory.events[0]).toMatchObject({
-      body: { cache_hit: false, paid: true, tx_hash: "0xbeef", tier: "safe" },
+      body: { cache_hit: false, paid: true, tx_hash: "0xbeef", output: "safe" },
     });
     expect((memory.events[0]?.body["cache_write_error"] as string)).toContain("SQLite disk full");
   });
@@ -423,7 +430,7 @@ describe("handleTokenQuery", () => {
     const chain = makeChain({ kind: "blocked", payTo: VENDOR, amount: PRICE, reason: "max-per-payment" });
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    await handleTokenQuery(CONTRACT, {
+    await handleJobQuery(HIRED_AGENT_ID, CONTRACT, {
       memory,
       chain,
       intelligence,
@@ -434,7 +441,7 @@ describe("handleTokenQuery", () => {
     });
 
     expect(memory.events).toHaveLength(1);
-    expect(memory.events[0]?.ref).toEqual({ category: "token_verdict", name: CONTRACT });
+    expect(memory.events[0]?.ref).toEqual({ category: HIRED_AGENT_ID, name: CONTRACT });
   });
 });
 
@@ -469,7 +476,7 @@ describe("resumeAfterApproval", () => {
     const chain = makeResumableChain([{ kind: "still_pending" }]);
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    const result = await resumeAfterApproval(CONTRACT, 7n, 10n, { memory, intelligence, chain, now: () => NOW });
+    const result = await resumeAfterApproval(HIRED_AGENT_ID, CONTRACT, 7n, 10n, { memory, intelligence, chain, now: () => NOW });
 
     expect(result).toEqual({ outcome: "still_pending" });
     expect(intelligence.calls).toEqual([]);
@@ -483,7 +490,7 @@ describe("resumeAfterApproval", () => {
     const chain = makeResumableChain([{ kind: "rejected", txHash: "0xrej" }]);
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    const result = await resumeAfterApproval(CONTRACT, 9n, 10n, { memory, intelligence, chain, now: () => NOW });
+    const result = await resumeAfterApproval(HIRED_AGENT_ID, CONTRACT, 9n, 10n, { memory, intelligence, chain, now: () => NOW });
 
     expect(result).toEqual({ outcome: "rejected" });
     expect(intelligence.calls).toEqual([]);
@@ -499,17 +506,19 @@ describe("resumeAfterApproval", () => {
     const chain = makeResumableChain([
       { kind: "approved", txHash: "0xapproved", amount: 300_000n, payTo: VENDOR },
     ]);
-    const intelligence = makeIntelligence({ tier: "high_conviction", raw: {}, sourceEndpoint: "/api/evaluate" });
+    const intelligence = makeIntelligence({ output: "high_conviction", raw: {}, sourceEndpoint: "/api/evaluate" });
 
-    const result = await resumeAfterApproval(CONTRACT, 11n, 10n, { memory, intelligence, chain, now: () => NOW });
+    const result = await resumeAfterApproval(HIRED_AGENT_ID, CONTRACT, 11n, 10n, { memory, intelligence, chain, now: () => NOW });
 
-    expect(result).toEqual({ outcome: "paid", tier: "high_conviction", txHash: "0xapproved" });
+    expect(result).toEqual({ outcome: "paid", output: "high_conviction", txHash: "0xapproved" });
     expect(intelligence.receivedTxHash).toBe("0xapproved");
     expect(memory.remembered).toEqual([
       {
-        contract: CONTRACT,
+        hiredAgentId: HIRED_AGENT_ID,
+        input: CONTRACT,
         record: {
-          tier: "high_conviction",
+          hiredAgentId: HIRED_AGENT_ID,
+          output: "high_conviction",
           raw_response: {},
           checked_at: NOW.toISOString(),
           source_endpoint: "/api/evaluate",
@@ -524,8 +533,8 @@ describe("resumeAfterApproval", () => {
     const chain = makeResumableChain([{ kind: "still_pending" }, { kind: "still_pending" }]);
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    await resumeAfterApproval(CONTRACT, 7n, 10n, { memory, intelligence, chain, now: () => NOW });
-    await resumeAfterApproval(CONTRACT, 7n, 10n, { memory, intelligence, chain, now: () => NOW });
+    await resumeAfterApproval(HIRED_AGENT_ID, CONTRACT, 7n, 10n, { memory, intelligence, chain, now: () => NOW });
+    await resumeAfterApproval(HIRED_AGENT_ID, CONTRACT, 7n, 10n, { memory, intelligence, chain, now: () => NOW });
 
     expect(chain.calls).toHaveLength(2);
   });
@@ -542,7 +551,7 @@ describe("handleGatewayQuery", () => {
     const chain = makeChain({ kind: "blocked", payTo: VENDOR, amount: PRICE, reason: "should never be called" });
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    const result = await handleGatewayQuery(CONTRACT, TX_HASH, {
+    const result = await handleGatewayQuery(HIRED_AGENT_ID, CONTRACT, TX_HASH, {
       memory,
       chain,
       intelligence,
@@ -566,7 +575,7 @@ describe("handleGatewayQuery", () => {
     const chain = makeChain({ kind: "blocked", payTo: VENDOR, amount: PRICE, reason: "should never be called" });
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    const result = await handleGatewayQuery(CONTRACT, TX_HASH, {
+    const result = await handleGatewayQuery(HIRED_AGENT_ID, CONTRACT, TX_HASH, {
       memory,
       chain,
       intelligence,
@@ -587,7 +596,7 @@ describe("handleGatewayQuery", () => {
     const memory = makeMemory(null);
     const incomingPayment = makeIncomingPayment({ kind: "wrong_recipient" });
 
-    const result = await handleGatewayQuery(CONTRACT, TX_HASH, {
+    const result = await handleGatewayQuery(HIRED_AGENT_ID, CONTRACT, TX_HASH, {
       memory,
       chain: makeChain({ kind: "blocked", payTo: VENDOR, amount: PRICE, reason: "n/a" }),
       intelligence: makeIntelligence(new Error("should never be called")),
@@ -607,7 +616,7 @@ describe("handleGatewayQuery", () => {
     const memory = makeMemory(null);
     const incomingPayment = makeIncomingPayment({ kind: "insufficient", amount: 100_000n });
 
-    const result = await handleGatewayQuery(CONTRACT, TX_HASH, {
+    const result = await handleGatewayQuery(HIRED_AGENT_ID, CONTRACT, TX_HASH, {
       memory,
       chain: makeChain({ kind: "blocked", payTo: VENDOR, amount: PRICE, reason: "n/a" }),
       intelligence: makeIntelligence(new Error("should never be called")),
@@ -624,8 +633,9 @@ describe("handleGatewayQuery", () => {
   });
 
   it("on a valid payment with a cache hit: marks the payment consumed before delegating, and returns the cached tier without touching the chain", async () => {
-    const cached: TokenVerdictRecord = {
-      tier: "safe",
+    const cached: JobRecord = {
+      hiredAgentId: HIRED_AGENT_ID,
+      output: "safe",
       raw_response: {},
       checked_at: new Date(NOW.getTime() - 5 * 60 * 1000).toISOString(),
       source_endpoint: "/api/evaluate",
@@ -635,7 +645,7 @@ describe("handleGatewayQuery", () => {
     const chain = makeChain({ kind: "blocked", payTo: VENDOR, amount: PRICE, reason: "should never be called" });
     const intelligence = makeIntelligence(new Error("should never be called"));
 
-    const result = await handleGatewayQuery(CONTRACT, TX_HASH, {
+    const result = await handleGatewayQuery(HIRED_AGENT_ID, CONTRACT, TX_HASH, {
       memory,
       chain,
       intelligence,
@@ -647,22 +657,22 @@ describe("handleGatewayQuery", () => {
       now: () => NOW,
     });
 
-    expect(result).toEqual({ outcome: "cache_hit", tier: "safe", checkedAt: cached.checked_at });
+    expect(result).toEqual({ outcome: "cache_hit", output: "safe", checkedAt: cached.checked_at });
     expect(chain.calls).toEqual([]);
     expect(memory.consumedPayments).toEqual([
-      { txHash: TX_HASH, body: { contract: CONTRACT, payer: PAYER, amount: FEE.toString(), consumed_at: NOW.toISOString() } },
+      { txHash: TX_HASH, body: { hiredAgentId: HIRED_AGENT_ID, input: CONTRACT, payer: PAYER, amount: FEE.toString(), consumed_at: NOW.toISOString() } },
     ]);
-    // Consumed before the delegated handleTokenQuery ran (recall is its first memory call).
+    // Consumed before the delegated handleJobQuery ran (recall is its first memory call).
     expect(memory.calls.indexOf("markPaymentConsumed")).toBeLessThan(memory.calls.indexOf("recall"));
   });
 
-  it("on a valid payment with a cache miss: delegates to the same paid flow as handleTokenQuery, still gated by SpendGuard", async () => {
+  it("on a valid payment with a cache miss: delegates to the same paid flow as handleJobQuery, still gated by SpendGuard", async () => {
     const memory = makeMemory(null);
     const incomingPayment = makeIncomingPayment({ kind: "valid", payer: PAYER, amount: FEE });
     const chain = makeChain({ kind: "sent", payTo: VENDOR, amount: PRICE, txHash: "0xbeef" });
-    const intelligence = makeIntelligence({ tier: "high_conviction", raw: {}, sourceEndpoint: "/api/evaluate" });
+    const intelligence = makeIntelligence({ output: "high_conviction", raw: {}, sourceEndpoint: "/api/evaluate" });
 
-    const result = await handleGatewayQuery(CONTRACT, TX_HASH, {
+    const result = await handleGatewayQuery(HIRED_AGENT_ID, CONTRACT, TX_HASH, {
       memory,
       chain,
       intelligence,
@@ -674,11 +684,11 @@ describe("handleGatewayQuery", () => {
       now: () => NOW,
     });
 
-    expect(result).toEqual({ outcome: "paid", tier: "high_conviction", txHash: "0xbeef" });
+    expect(result).toEqual({ outcome: "paid", output: "high_conviction", txHash: "0xbeef" });
     expect(chain.calls).toEqual(["requestPayment"]);
     expect(memory.consumedPayments).toHaveLength(1);
     // The verified on-chain payer (not a self-reported identity) flows
-    // into the same decision journal handleTokenQuery already writes to —
+    // into the same decision journal handleJobQuery already writes to —
     // the gateway path gets "who asked" for free, from a stronger signal
     // than a Ping sender address would be.
     expect(memory.events.at(-1)?.body).toMatchObject({ requester: PAYER });
@@ -689,7 +699,7 @@ describe("handleGatewayQuery", () => {
     const incomingPayment = makeIncomingPayment({ kind: "valid", payer: PAYER, amount: FEE });
     const chain = makeChain({ kind: "pending", payTo: VENDOR, amount: PRICE, requestId: 9n, txHash: "0xaa", blockNumber: 5n });
 
-    const result = await handleGatewayQuery(CONTRACT, TX_HASH, {
+    const result = await handleGatewayQuery(HIRED_AGENT_ID, CONTRACT, TX_HASH, {
       memory,
       chain,
       intelligence: makeIntelligence(new Error("should never be called")),
@@ -709,7 +719,7 @@ describe("handleGatewayQuery", () => {
     const memory = makeMemory(null);
     const incomingPayment = makeIncomingPayment({ kind: "insufficient", amount: 1n });
 
-    await handleGatewayQuery(CONTRACT, TX_HASH, {
+    await handleGatewayQuery(HIRED_AGENT_ID, CONTRACT, TX_HASH, {
       memory,
       chain: makeChain({ kind: "blocked", payTo: VENDOR, amount: PRICE, reason: "n/a" }),
       intelligence: makeIntelligence(new Error("should never be called")),

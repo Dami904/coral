@@ -44,8 +44,8 @@ build doesn't borrow that framing.
 ## Where memory is load-bearing
 
 The entire critical path lives in one function:
-[`handleTokenQuery` in `src/decisionCore.ts`](src/decisionCore.ts). Every
-call checks Sibyl Memory (`memory.recallTokenVerdict`) **before** any
+[`handleJobQuery` in `src/decisionCore.ts`](src/decisionCore.ts). Every
+call checks Sibyl Memory (`memory.recallJob`) **before** any
 payment is even considered — not as an optimization, as a hard ordering
 enforced by a passing test
 (`test/decisionCore.test.ts`: *"checks memory before ever calling the
@@ -104,7 +104,7 @@ immediately after, verification — so deleting Sibyl Memory breaks this
 double-spend guarantee too, not just the cache.
 
 Once a payment verifies, the request delegates straight into the same
-`handleTokenQuery` path Coral's own queries use: a cache hit costs Coral
+`handleJobQuery` path Coral's own queries use: a cache hit costs Coral
 nothing further and the gateway fee is pure margin; a cache miss has Coral
 pay Sibyl out of the fee that was just collected. No second smart
 contract was needed for this — `SpendGuard` already gates Coral's own

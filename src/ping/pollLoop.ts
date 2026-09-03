@@ -101,7 +101,7 @@ export async function runPollLoop(config: PollLoopConfig, signal: AbortSignal): 
           }
 
           const replyOutcome: PollReplyOutcome =
-            outcome.outcome === "paid" ? { outcome: "resumed", tier: outcome.tier, txHash: outcome.txHash } : outcome;
+            outcome.outcome === "paid" ? { outcome: "resumed", output: outcome.output, txHash: outcome.txHash } : outcome;
           await config.ping.sendReply(tracked.replyTo, formatReply(replyOutcome));
           pendingRequests.delete(key);
         } catch (err) {

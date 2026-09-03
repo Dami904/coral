@@ -5,14 +5,18 @@ An agent, built for the Sibyl Labs Hackathon (Sep 1–10, 2026), that:
 receives inbound messages over **Ping** (Sibyl Labs' on-chain
 agent-to-agent messaging protocol on Base), consults **Sibyl Memory** —
 over the standard MCP interface (`sibyl-memory-mcp`) — before ever acting,
-and only pays for a fresh builder-conviction check via Sibyl's **x402**
-Intelligence Endpoints when memory has no cached tier or the cached one
-is stale. (The endpoint scores builder conviction/community seed/on-chain
-proof of work, not a safety/scam verdict — see docs/LIMITATIONS.md.) That payment is gated by an on-chain **`SpendGuard`** contract on
-Base: the agent's wallet can only *request* a payment; the contract, not
-the agent's own reasoning, decides whether it's allowed. Full design
-rationale, verified facts, and the demo script live in `PLAN.md` — read it
-before making an architectural change, not just this file.
+and only pays a hired agent for a fresh job result when memory has no
+cached output for that input or the cached one is stale. The core
+(`handleJobQuery` in `src/decisionCore.ts`) is generalized to support any
+hired agent, not hardcoded to one — but the one real, verified
+integration today is Sibyl's **x402** Intelligence Endpoints, scoring
+builder conviction/community seed/on-chain proof of work (not a
+safety/scam verdict — see docs/LIMITATIONS.md). That payment is gated by
+an on-chain **`SpendGuard`** contract on Base: the agent's wallet can only
+*request* a payment; the contract, not the agent's own reasoning, decides
+whether it's allowed. Full design rationale, verified facts, and the demo
+script live in `PLAN.md` — read it before making an architectural change,
+not just this file.
 
 ## Source of truth, in order
 1. Behavior actually reproduced (a script run, a response logged) — not

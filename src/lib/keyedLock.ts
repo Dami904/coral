@@ -9,7 +9,7 @@
  * duplicate escalation proposal) and reused by live-acp-provider.ts for
  * the same class of bug: a duplicate/replayed `job.funded` SSE event, or
  * a resume-poll tick that outruns its own interval, can otherwise run
- * `handleTokenQuery`/`resumeAfterApproval` + `session.submit()` twice for
+ * `handleJobQuery`/`resumeAfterApproval` + `session.submit()` twice for
  * one logical job. See docs/LIMITATIONS.md — this only serializes within
  * one process; a second instance of the same script can still race it.
  */

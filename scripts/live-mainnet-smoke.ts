@@ -16,9 +16,9 @@
  * Run: NETWORK=mainnet MAINNET_SMOKE_TEST_TOKEN=0x... pnpm live:mainnet-smoke
  */
 import { loadConfig } from "../src/config.js";
-import { handleTokenQuery, resumeAfterApproval } from "../src/decisionCore.js";
+import { handleJobQuery, resumeAfterApproval } from "../src/decisionCore.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
-import { makeChainClient, makeMemoryClient, makeOwnerClients, ownerApproveAndWait, resetMemoryDb } from "./lib/liveHarness.js";
+import { makeChainClient, makeMemoryClient, makeOwnerClients, ownerApproveAndWait, resetMemoryDb, SIBYL_HIRED_AGENT_ID } from "./lib/liveHarness.js";
 
 const REAL_PRICE_USDC_6DP = 250_000n; // confirmed live, docs/API_NOTES.md
 
@@ -50,12 +50,12 @@ async function main() {
 
   try {
     console.log(`[mainnet-smoke] call 1: real query for ${contract} against the deployed mainnet guard...`);
-    const first = await handleTokenQuery(contract, deps);
+    const first = await handleJobQuery(SIBYL_HIRED_AGENT_ID, contract, deps);
     console.log("[mainnet-smoke] result 1:", first);
 
     let tier: string;
     if (first.outcome === "paid") {
-      tier = first.tier;
+      tier = first.output;
     } else if (first.outcome === "pending_approval") {
       console.log(
         `[mainnet-smoke] escalated as expected (threshold below the real price) — owner approving requestId ${first.requestId.toString()}...`,
@@ -69,7 +69,7 @@ async function main() {
         throw new Error(`ownerApprove tx ${approveTxHash} did not emit PaymentApproved`);
       }
       console.log(`[mainnet-smoke] owner approved on-chain (tx ${approveTxHash}) — resuming (real x402 call)...`);
-      const resumed = await resumeAfterApproval(contract, first.requestId, first.fromBlock, {
+      const resumed = await resumeAfterApproval(SIBYL_HIRED_AGENT_ID, contract, first.requestId, first.fromBlock, {
         memory,
         intelligence,
         chain,
@@ -79,13 +79,13 @@ async function main() {
       if (resumed.outcome !== "paid") {
         throw new Error(`expected "paid" after resuming an approved request, got "${resumed.outcome}"`);
       }
-      tier = resumed.tier;
+      tier = resumed.output;
     } else {
       throw new Error(`expected "paid" or "pending_approval" on the first real call, got "${first.outcome}"`);
     }
 
     console.log("[mainnet-smoke] call 2: same contract, expect cache hit -> zero additional payment");
-    const second = await handleTokenQuery(contract, deps);
+    const second = await handleJobQuery(SIBYL_HIRED_AGENT_ID, contract, deps);
     console.log("[mainnet-smoke] result 2:", second);
     if (second.outcome !== "cache_hit") {
       throw new Error(`expected "cache_hit" on the second call, got "${second.outcome}"`);

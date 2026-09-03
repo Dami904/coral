@@ -114,7 +114,7 @@ describe("runPollLoop", () => {
           // journal entry can carry it too.
           expect(requester).toBe("0x000000000000000000000000000000000000a1");
           if (resumeCalls < 2) return { outcome: "still_pending" };
-          return { outcome: "paid", tier: "high_conviction", txHash: "0xresolved" };
+          return { outcome: "paid", output: "high_conviction", txHash: "0xresolved" };
         },
         onCycle: () => {
           if (resumeCalls >= 2) controller.abort();

@@ -2,27 +2,29 @@ import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHttpGatewayListener, type HttpGatewayDeps } from "../../src/http/httpGatewayServer.js";
 import type {
+  HiredAgentId,
   IntelligencePort,
+  JobRecord,
   MemoryPort,
   PaymentOutcome,
   PendingResolution,
   ResumableChainPort,
-  TokenVerdictRecord,
 } from "../../src/types.js";
 
 const CONTRACT = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+const HIRED_AGENT_ID: HiredAgentId = "sibyl-conviction-check";
 const VENDOR: `0x${string}` = "0x000000000000000000000000000000000000ea";
 const PRICE = 250_000n;
 
 function makeMemory(
-  recallResult: TokenVerdictRecord | null,
+  recallResult: JobRecord | null,
   pendingEscalation: { requestId: bigint; fromBlock: bigint } | null = null,
 ): MemoryPort {
   return {
-    async recallTokenVerdict() {
+    async recallJob() {
       return recallResult;
     },
-    async rememberTokenVerdict() {
+    async rememberJob() {
       /* no-op for these tests */
     },
     async recordEvent() {
@@ -67,8 +69,8 @@ function makeChain(
 
 function makeIntelligence(tier = "high_conviction"): IntelligencePort {
   return {
-    async checkToken() {
-      return { tier, raw: { tier }, sourceEndpoint: "https://example.test/api/evaluate" };
+    async invoke() {
+      return { output: tier, raw: { tier }, sourceEndpoint: "https://example.test/api/evaluate" };
     },
   };
 }
@@ -81,6 +83,7 @@ function deps(overrides: Partial<HttpGatewayDeps>): HttpGatewayDeps {
     payTo: VENDOR,
     priceUsdc6dp: PRICE,
     staleWindowMs: 60 * 60 * 1000,
+    hiredAgentId: HIRED_AGENT_ID,
     ...overrides,
   };
 }
@@ -131,7 +134,7 @@ describe("GET /check", () => {
 
   it("200s a cache hit straight from memory, no payment involved", async () => {
     currentDeps = deps({
-      memory: makeMemory({ tier: "high_conviction", raw_response: {}, checked_at: new Date().toISOString(), source_endpoint: "x" }),
+      memory: makeMemory({ hiredAgentId: HIRED_AGENT_ID, output: "high_conviction", raw_response: {}, checked_at: new Date().toISOString(), source_endpoint: "x" }),
     });
     const res = await fetch(`${baseUrl}/check?token=${CONTRACT}`);
     expect(res.status).toBe(200);
@@ -264,7 +267,7 @@ describe("unexpected failures", () => {
     currentDeps = deps({
       memory: {
         ...makeMemory(null),
-        async recallTokenVerdict() {
+        async recallJob() {
           throw new Error("db exploded");
         },
       },
@@ -289,12 +292,12 @@ describe("concurrency: per-contract lock", () => {
     // one logical query. Artificial delays below widen the race window so
     // this test would actually catch a regression, not pass by accident of
     // scheduling.
-    let cached: TokenVerdictRecord | null = null;
+    let cached: JobRecord | null = null;
     const statefulMemory: MemoryPort = {
-      async recallTokenVerdict() {
+      async recallJob() {
         return cached;
       },
-      async rememberTokenVerdict(_contract, record) {
+      async rememberJob(_hiredAgentId, _input, record) {
         cached = record;
       },
       async recordEvent() {
@@ -329,9 +332,9 @@ describe("concurrency: per-contract lock", () => {
       },
     };
     const delayedIntelligence: IntelligencePort = {
-      async checkToken() {
+      async invoke() {
         await new Promise((resolve) => setTimeout(resolve, 10));
-        return { tier: "high_conviction", raw: {}, sourceEndpoint: "https://example.test/api/evaluate" };
+        return { output: "high_conviction", raw: {}, sourceEndpoint: "https://example.test/api/evaluate" };
       },
     };
 
@@ -344,7 +347,7 @@ describe("concurrency: per-contract lock", () => {
     // never actually persist — the per-contract lock's Map, silently
     // defeating the very thing this test checks.
     const lockedServer = createServer(
-      createHttpGatewayListener({ memory: statefulMemory, chain: delayedChain, intelligence: delayedIntelligence, payTo: VENDOR, priceUsdc6dp: PRICE, staleWindowMs: 60 * 60 * 1000 }),
+      createHttpGatewayListener({ memory: statefulMemory, chain: delayedChain, intelligence: delayedIntelligence, payTo: VENDOR, priceUsdc6dp: PRICE, staleWindowMs: 60 * 60 * 1000, hiredAgentId: HIRED_AGENT_ID }),
     );
     await new Promise<void>((resolve) => lockedServer.listen(0, resolve));
     const address = lockedServer.address();

@@ -8,13 +8,13 @@ import type { IntelligencePort } from "../types.js";
  * end-to-end now, without pretending the x402 integration is done.
  */
 export class StubIntelligenceClient implements IntelligencePort {
-  checkToken(
-    contract: string,
+  invoke(
+    input: string,
     paymentTxHash: `0x${string}`,
-  ): Promise<{ tier: string; raw: unknown; sourceEndpoint: string }> {
+  ): Promise<{ output: string; raw: unknown; sourceEndpoint: string }> {
     return Promise.resolve({
-      tier: "unknown-stub",
-      raw: { note: "StubIntelligenceClient: real /api/evaluate call not wired until Day 5", contract, paymentTxHash },
+      output: "unknown-stub",
+      raw: { note: "StubIntelligenceClient: real /api/evaluate call not wired until Day 5", input, paymentTxHash },
       sourceEndpoint: "stub://not-yet-wired",
     });
   }

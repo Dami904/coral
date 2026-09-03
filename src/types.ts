@@ -1,13 +1,25 @@
-export type TokenVerdictRecord = {
-  /**
-   * Sibyl's real /api/evaluate endpoint scores "builder conviction,
-   * community seed, on-chain proof of work" (conviction_score 0-30 + tier)
-   * — a project-conviction rating, not a safe/unsafe token-safety verdict.
-   * Named `tier` (not `verdict`) deliberately, so nothing downstream can
-   * mistake this for a safety/scam determination. See docs/API_NOTES.md
-   * and docs/LIMITATIONS.md.
-   */
-  tier: string;
+/**
+ * Opaque label identifying which hired agent a job's output came from —
+ * e.g. "sibyl-conviction-check". The core never interprets this string; it
+ * only uses it to partition the cache (so two different hired agents'
+ * answers for what looks like "the same" input never collide) and to know
+ * which IntelligencePort instance a given deployment/offering is talking
+ * to. See docs/API_NOTES.md's generalization note.
+ */
+export type HiredAgentId = string;
+
+/**
+ * Generalizes what used to be TokenVerdictRecord: caches the (input,
+ * output) pair from a job hired from ANY agent, not just Sibyl's
+ * token-conviction check — the only real integration wired up today, but
+ * no longer the only one the core can support. `output` was `tier`
+ * before this generalization: same value, generic name, since not every
+ * hired agent's result is a "conviction tier." See docs/API_NOTES.md and
+ * docs/LIMITATIONS.md.
+ */
+export type JobRecord = {
+  hiredAgentId: HiredAgentId;
+  output: string;
   raw_response: unknown;
   checked_at: string;
   source_endpoint: string;
@@ -36,8 +48,8 @@ export type PaymentOutcome =
  * instead of just something the code review has to notice.
  */
 export interface MemoryPort {
-  recallTokenVerdict(contract: string): Promise<TokenVerdictRecord | null>;
-  rememberTokenVerdict(contract: string, record: TokenVerdictRecord): Promise<void>;
+  recallJob(hiredAgentId: HiredAgentId, input: string): Promise<JobRecord | null>;
+  rememberJob(hiredAgentId: HiredAgentId, input: string, record: JobRecord): Promise<void>;
   recordEvent(
     kind: string,
     body: Record<string, unknown>,
@@ -71,15 +83,15 @@ export interface MemoryPort {
    * spam here. Deleting Sibyl Memory erases this guard along with
    * everything else, same as the other two ledgers above.
    */
-  getPendingEscalation(contract: string): Promise<{ requestId: bigint; fromBlock: bigint } | null>;
+  getPendingEscalation(hiredAgentId: HiredAgentId, input: string): Promise<{ requestId: bigint; fromBlock: bigint } | null>;
   /** Records a freshly-proposed escalation. Called right after
    * chain.requestPayment returns "pending", before returning to the
    * caller. */
-  setPendingEscalation(contract: string, requestId: bigint, fromBlock: bigint): Promise<void>;
+  setPendingEscalation(hiredAgentId: HiredAgentId, input: string, requestId: bigint, fromBlock: bigint): Promise<void>;
   /** Clears the record once resumeAfterApproval resolves it either way
    * (approved-and-completed, or rejected) — a still-pending resolution
    * leaves it in place. */
-  clearPendingEscalation(contract: string): Promise<void>;
+  clearPendingEscalation(hiredAgentId: HiredAgentId, input: string): Promise<void>;
 }
 
 export interface ChainPort {
@@ -108,22 +120,26 @@ export interface ResumableChainPort extends ChainPort {
 }
 
 /**
- * Sibyl's x402 /api/evaluate endpoint (or a stand-in). `paymentTxHash` is
- * the SpendGuard payment's mined tx hash — the real client relays it via
- * the X-PAYMENT-TX header per docs/API_NOTES.md's directTx flow. The
- * payment has already happened by the time this is called; this port
- * only ever proves the payment, never initiates one.
+ * A hired agent Coral can pay for a job — Sibyl's x402 /api/evaluate
+ * endpoint is the one real implementation today (X402IntelligenceClient),
+ * but the interface itself no longer assumes Sibyl's specific shape: not
+ * every hired agent's input is a contract address or its output a
+ * "tier." `paymentTxHash` is the SpendGuard payment's mined tx hash — the
+ * real client relays it via the X-PAYMENT-TX header per
+ * docs/API_NOTES.md's directTx flow. The payment has already happened by
+ * the time this is called; this port only ever proves the payment, never
+ * initiates one.
  */
 export interface IntelligencePort {
-  checkToken(
-    contract: string,
+  invoke(
+    input: string,
     paymentTxHash: `0x${string}`,
-  ): Promise<{ tier: string; raw: unknown; sourceEndpoint: string }>;
+  ): Promise<{ output: string; raw: unknown; sourceEndpoint: string }>;
 }
 
 export type HandleOutcome =
-  | { outcome: "cache_hit"; tier: string; checkedAt: string }
-  | { outcome: "paid"; tier: string; txHash: `0x${string}` }
+  | { outcome: "cache_hit"; output: string; checkedAt: string }
+  | { outcome: "paid"; output: string; txHash: `0x${string}` }
   | { outcome: "pending_approval"; requestId: bigint; fromBlock: bigint }
   | { outcome: "blocked"; reason: string };
 
@@ -187,18 +203,19 @@ export type PollReplyOutcome =
   | GatewayPaymentOutcome
   | { outcome: "no_contract_found" }
   | { outcome: "error"; message: string }
-  | { outcome: "resumed"; tier: string; txHash: `0x${string}` }
+  | { outcome: "resumed"; output: string; txHash: `0x${string}` }
   | { outcome: "resumed_rejected"; requestId: bigint };
 
 export class IntelligenceCheckFailedAfterPaymentError extends Error {
   constructor(
-    public readonly contract: string,
+    public readonly hiredAgentId: HiredAgentId,
+    public readonly input: string,
     public readonly txHash: `0x${string}`,
     cause: unknown,
   ) {
     super(
-      `payment for ${contract} succeeded (tx ${txHash}) but the intelligence check failed afterward; ` +
-        `no cache entry was written — see docs/API_NOTES.md's "dangerous ordering" note`,
+      `payment to ${hiredAgentId} for ${input} succeeded (tx ${txHash}) but the intelligence check failed ` +
+        `afterward; no cache entry was written — see docs/API_NOTES.md's "dangerous ordering" note`,
       { cause },
     );
     this.name = "IntelligenceCheckFailedAfterPaymentError";
@@ -207,14 +224,15 @@ export class IntelligenceCheckFailedAfterPaymentError extends Error {
 
 export class CacheWriteFailedAfterPaymentError extends Error {
   constructor(
-    public readonly contract: string,
+    public readonly hiredAgentId: HiredAgentId,
+    public readonly input: string,
     public readonly txHash: `0x${string}`,
     cause: unknown,
   ) {
     super(
-      `payment for ${contract} succeeded (tx ${txHash}) and the intelligence check succeeded, but writing ` +
-        `the verdict to memory failed afterward; the next lookup for this contract will pay again unless a ` +
-        `human reconciles it — see docs/API_NOTES.md's "dangerous ordering" note`,
+      `payment to ${hiredAgentId} for ${input} succeeded (tx ${txHash}) and the intelligence check succeeded, ` +
+        `but writing the result to memory failed afterward; the next lookup for this input will pay again ` +
+        `unless a human reconciles it — see docs/API_NOTES.md's "dangerous ordering" note`,
       { cause },
     );
     this.name = "CacheWriteFailedAfterPaymentError";
@@ -231,12 +249,13 @@ export class CacheWriteFailedAfterPaymentError extends Error {
  */
 export class IntelligenceResultUnrecoverableError extends Error {
   constructor(
-    public readonly contract: string,
+    public readonly hiredAgentId: HiredAgentId,
+    public readonly input: string,
     public readonly paymentTxHash: `0x${string}`,
   ) {
     super(
-      `payment for ${contract} (tx ${paymentTxHash}) appears to have already been relayed to the ` +
-        `intelligence endpoint on an earlier attempt, but this process never saw a response — the ` +
+      `payment to ${hiredAgentId} for ${input} (tx ${paymentTxHash}) appears to have already been relayed to ` +
+        `the intelligence endpoint on an earlier attempt, but this process never saw a response — the ` +
         `payment cannot be recovered by retrying with the same hash again`,
     );
     this.name = "IntelligenceResultUnrecoverableError";

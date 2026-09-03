@@ -1,9 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import type { MemoryPort, TokenVerdictRecord } from "../types.js";
+import type { HiredAgentId, JobRecord, MemoryPort } from "../types.js";
 import { withRetry } from "../lib/retry.js";
 
-const CATEGORY = "token_verdict";
 const PAYMENT_CATEGORY = "incoming_payment";
 const PENDING_ESCALATION_CATEGORY = "pending_escalation";
 const TRANSPORT_RETRY = { maxAttempts: 3, baseDelayMs: 200 };
@@ -136,12 +135,12 @@ export class SibylMemoryClient implements MemoryPort {
     );
   }
 
-  async recallTokenVerdict(contract: string): Promise<TokenVerdictRecord | null> {
+  async recallJob(hiredAgentId: HiredAgentId, input: string): Promise<JobRecord | null> {
     // Reads are safe to blind-retry on a transport-level (UNKNOWN) failure —
     // SQLite reads are local and atomic, there's no double-read hazard.
     const result = await this.callTool(
       "memory_recall",
-      { category: CATEGORY, name: contract },
+      { category: hiredAgentId, name: input },
       { retryTransportFailures: true },
     );
     if (result.isError) {
@@ -153,19 +152,19 @@ export class SibylMemoryClient implements MemoryPort {
     if (!body || typeof body !== "object") {
       throw new Error(`memory_recall returned an entity with no usable body: ${JSON.stringify(result.parsed)}`);
     }
-    return body as TokenVerdictRecord;
+    return body as JobRecord;
   }
 
-  private async writeRemember(contract: string, record: TokenVerdictRecord): Promise<void> {
-    const result = await this.callTool("memory_remember", { category: CATEGORY, name: contract, body: record });
+  private async writeRemember(hiredAgentId: HiredAgentId, input: string, record: JobRecord): Promise<void> {
+    const result = await this.callTool("memory_remember", { category: hiredAgentId, name: input, body: record });
     if (result.isError) {
       throw new MemoryToolRejectedError("memory_remember", result.parsed);
     }
   }
 
-  async rememberTokenVerdict(contract: string, record: TokenVerdictRecord): Promise<void> {
+  async rememberJob(hiredAgentId: HiredAgentId, input: string, record: JobRecord): Promise<void> {
     try {
-      await this.writeRemember(contract, record);
+      await this.writeRemember(hiredAgentId, input, record);
     } catch (err) {
       // A well-formed rejection (validation, cap exceeded) is FAILED, not
       // UNKNOWN — surface it as-is, there's nothing to reconcile.
@@ -178,19 +177,21 @@ export class SibylMemoryClient implements MemoryPort {
       // genuinely isn't there yet. Logged either way: this is non-obvious
       // recovery behavior a future debugger would otherwise have no trace
       // of if it never surfaces as a thrown error.
-      const reread = await this.recallTokenVerdict(contract).catch(() => null);
+      const reread = await this.recallJob(hiredAgentId, input).catch(() => null);
       if (reread && reread.checked_at === record.checked_at) {
         console.error("memory_remember: transport failure after a write that had already landed — not resending", {
-          contract,
+          hiredAgentId,
+          input,
           err,
         });
         return;
       }
       console.error("memory_remember: transport failure, reconcile found no fresh write yet — resending once", {
-        contract,
+        hiredAgentId,
+        input,
         err,
       });
-      await this.writeRemember(contract, record);
+      await this.writeRemember(hiredAgentId, input, record);
     }
   }
 
@@ -199,7 +200,7 @@ export class SibylMemoryClient implements MemoryPort {
     body: Record<string, unknown>,
     ref: { category: string; name: string },
   ): Promise<void> {
-    // Deliberately no retry/reconcile here, unlike rememberTokenVerdict:
+    // Deliberately no retry/reconcile here, unlike rememberJob:
     // each call appends a new journal event with no idempotency key, so a
     // resend after an ambiguous UNKNOWN failure would risk a duplicate
     // audit-trail entry — worse than the single lost event this would be
@@ -218,7 +219,7 @@ export class SibylMemoryClient implements MemoryPort {
   }
 
   async wasPaymentConsumed(txHash: `0x${string}`): Promise<boolean> {
-    // Same reasoning as recallTokenVerdict: a local SQLite read is safe to
+    // Same reasoning as recallJob: a local SQLite read is safe to
     // blind-retry on a transport failure.
     const result = await this.callTool(
       "memory_recall",
@@ -244,13 +245,13 @@ export class SibylMemoryClient implements MemoryPort {
       await this.writeMarkPaymentConsumed(txHash, body);
     } catch (err) {
       // A well-formed rejection is FAILED, not UNKNOWN — nothing to
-      // reconcile, surface it as-is (same split as rememberTokenVerdict).
+      // reconcile, surface it as-is (same split as rememberJob).
       if (err instanceof MemoryToolRejectedError) throw err;
       // Anything else is transport-level (UNKNOWN): the write may have
       // already landed before the connection dropped. memory_remember is
       // idempotent on (category, name) — txHash is unique per payment, so
       // any existing record under it can only be from this exact write,
-      // making plain existence (unlike rememberTokenVerdict's content
+      // making plain existence (unlike rememberJob's content
       // match, needed there because a stale unrelated entry can already
       // exist for the same contract) enough to reconcile against. Blindly
       // resending without checking would be fine content-wise but would
@@ -272,12 +273,24 @@ export class SibylMemoryClient implements MemoryPort {
     }
   }
 
-  async getPendingEscalation(contract: string): Promise<{ requestId: bigint; fromBlock: bigint } | null> {
-    // Same reasoning as recallTokenVerdict/wasPaymentConsumed: a local
+  /**
+   * PENDING_ESCALATION_CATEGORY is one fixed category shared by every
+   * hired agent — without composing hiredAgentId into the key itself, two
+   * different hired agents whose `input` strings happen to overlap (e.g.
+   * both keyed by the same address) would collide here even though their
+   * job caches (recallJob/rememberJob, keyed by hiredAgentId as the
+   * category) never would.
+   */
+  private static pendingKey(hiredAgentId: HiredAgentId, input: string): string {
+    return `${hiredAgentId}::${input}`;
+  }
+
+  async getPendingEscalation(hiredAgentId: HiredAgentId, input: string): Promise<{ requestId: bigint; fromBlock: bigint } | null> {
+    // Same reasoning as recallJob/wasPaymentConsumed: a local
     // SQLite read is safe to blind-retry on a transport failure.
     const result = await this.callTool(
       "memory_recall",
-      { category: PENDING_ESCALATION_CATEGORY, name: contract },
+      { category: PENDING_ESCALATION_CATEGORY, name: SibylMemoryClient.pendingKey(hiredAgentId, input) },
       { retryTransportFailures: true },
     );
     if (result.isError) {
@@ -293,10 +306,10 @@ export class SibylMemoryClient implements MemoryPort {
     return { requestId: BigInt(requestId), fromBlock: BigInt(fromBlock) };
   }
 
-  private async writeSetPendingEscalation(contract: string, requestId: bigint, fromBlock: bigint): Promise<void> {
+  private async writeSetPendingEscalation(hiredAgentId: HiredAgentId, input: string, requestId: bigint, fromBlock: bigint): Promise<void> {
     const result = await this.callTool("memory_remember", {
       category: PENDING_ESCALATION_CATEGORY,
-      name: contract,
+      name: SibylMemoryClient.pendingKey(hiredAgentId, input),
       body: { requestId: requestId.toString(), fromBlock: fromBlock.toString() },
     });
     if (result.isError) {
@@ -304,34 +317,36 @@ export class SibylMemoryClient implements MemoryPort {
     }
   }
 
-  async setPendingEscalation(contract: string, requestId: bigint, fromBlock: bigint): Promise<void> {
+  async setPendingEscalation(hiredAgentId: HiredAgentId, input: string, requestId: bigint, fromBlock: bigint): Promise<void> {
     try {
-      await this.writeSetPendingEscalation(contract, requestId, fromBlock);
+      await this.writeSetPendingEscalation(hiredAgentId, input, requestId, fromBlock);
     } catch (err) {
       if (err instanceof MemoryToolRejectedError) throw err;
       // Transport-level (UNKNOWN): reconcile via a re-read, same pattern as
-      // rememberTokenVerdict — only resend if the write genuinely isn't
-      // there yet, so a lost-response case doesn't silently overwrite a
-      // later, already-superseding requestId with a stale one.
-      const reread = await this.getPendingEscalation(contract).catch(() => null);
+      // rememberJob — only resend if the write genuinely isn't there yet,
+      // so a lost-response case doesn't silently overwrite a later,
+      // already-superseding requestId with a stale one.
+      const reread = await this.getPendingEscalation(hiredAgentId, input).catch(() => null);
       if (reread && reread.requestId === requestId) {
         console.error("setPendingEscalation: transport failure after a write that had already landed — not resending", {
-          contract,
+          hiredAgentId,
+          input,
           requestId,
           err,
         });
         return;
       }
       console.error("setPendingEscalation: transport failure, reconcile found no fresh write yet — resending once", {
-        contract,
+        hiredAgentId,
+        input,
         requestId,
         err,
       });
-      await this.writeSetPendingEscalation(contract, requestId, fromBlock);
+      await this.writeSetPendingEscalation(hiredAgentId, input, requestId, fromBlock);
     }
   }
 
-  async clearPendingEscalation(contract: string): Promise<void> {
+  async clearPendingEscalation(hiredAgentId: HiredAgentId, input: string): Promise<void> {
     // Safe to blind-retry on a transport failure, same reasoning as the
     // other reads on this class: memory_forget on an already-forgotten
     // key is a documented no-op (the NOT_FOUND handling right below),
@@ -340,11 +355,11 @@ export class SibylMemoryClient implements MemoryPort {
     // here leaves a stale pending-escalation record in place with no
     // retry and nothing scheduling reconciliation — on the rejected path
     // that permanently blocks a real payment attempt from ever starting
-    // again for this contract (decisionCore.ts's getPendingEscalation
+    // again for this input (decisionCore.ts's getPendingEscalation
     // check keeps pointing at the dead requestId).
     const result = await this.callTool(
       "memory_forget",
-      { category: PENDING_ESCALATION_CATEGORY, name: contract, reason: "escalation resolved" },
+      { category: PENDING_ESCALATION_CATEGORY, name: SibylMemoryClient.pendingKey(hiredAgentId, input), reason: "escalation resolved" },
       { retryTransportFailures: true },
     );
     if (result.isError) {

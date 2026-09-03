@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SibylMemoryClient, MemoryToolRejectedError } from "../../src/memory/sibylMemoryClient.js";
-import type { TokenVerdictRecord } from "../../src/types.js";
+import type { HiredAgentId, JobRecord } from "../../src/types.js";
 
 const { callToolMock, connectMock, closeMock } = vi.hoisted(() => ({
   callToolMock: vi.fn(),
@@ -25,8 +25,10 @@ function textResult(payload: unknown, isError = false) {
 }
 
 const CONTRACT = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
-const RECORD: TokenVerdictRecord = {
-  tier: "high_conviction",
+const HIRED_AGENT_ID: HiredAgentId = "sibyl-conviction-check";
+const RECORD: JobRecord = {
+  hiredAgentId: HIRED_AGENT_ID,
+  output: "high_conviction",
   raw_response: {},
   checked_at: "2026-08-26T12:00:00.000Z",
   source_endpoint: "/api/evaluate",
@@ -38,18 +40,18 @@ beforeEach(() => {
 });
 
 describe("SibylMemoryClient", () => {
-  describe("recallTokenVerdict", () => {
+  describe("recallJob", () => {
     it("returns the parsed record on a successful recall", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ entity: { body: RECORD } }));
       const client = new SibylMemoryClient();
-      const result = await client.recallTokenVerdict(CONTRACT);
+      const result = await client.recallJob(HIRED_AGENT_ID, CONTRACT);
       expect(result).toEqual(RECORD);
     });
 
     it("returns null on a NOT_FOUND rejection, without retrying", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ code: "NOT_FOUND" }, true));
       const client = new SibylMemoryClient();
-      const result = await client.recallTokenVerdict(CONTRACT);
+      const result = await client.recallJob(HIRED_AGENT_ID, CONTRACT);
       expect(result).toBeNull();
       expect(callToolMock).toHaveBeenCalledTimes(1);
     });
@@ -57,7 +59,7 @@ describe("SibylMemoryClient", () => {
     it("throws MemoryToolRejectedError on a real (non-NOT_FOUND) rejection, without retrying", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ code: "VALIDATION_ERROR" }, true));
       const client = new SibylMemoryClient();
-      await expect(client.recallTokenVerdict(CONTRACT)).rejects.toBeInstanceOf(MemoryToolRejectedError);
+      await expect(client.recallJob(HIRED_AGENT_ID, CONTRACT)).rejects.toBeInstanceOf(MemoryToolRejectedError);
       expect(callToolMock).toHaveBeenCalledTimes(1);
     });
 
@@ -66,24 +68,24 @@ describe("SibylMemoryClient", () => {
         .mockRejectedValueOnce(new Error("stdio pipe closed"))
         .mockResolvedValueOnce(textResult({ entity: { body: RECORD } }));
       const client = new SibylMemoryClient();
-      const result = await client.recallTokenVerdict(CONTRACT);
+      const result = await client.recallJob(HIRED_AGENT_ID, CONTRACT);
       expect(result).toEqual(RECORD);
       expect(callToolMock).toHaveBeenCalledTimes(2);
     });
   });
 
-  describe("rememberTokenVerdict", () => {
+  describe("rememberJob", () => {
     it("writes successfully on the first attempt", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ ok: true }));
       const client = new SibylMemoryClient();
-      await client.rememberTokenVerdict(CONTRACT, RECORD);
+      await client.rememberJob(HIRED_AGENT_ID, CONTRACT, RECORD);
       expect(callToolMock).toHaveBeenCalledTimes(1);
     });
 
     it("throws MemoryToolRejectedError immediately on a real rejection — no reconcile re-read", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ code: "CAP_EXCEEDED" }, true));
       const client = new SibylMemoryClient();
-      await expect(client.rememberTokenVerdict(CONTRACT, RECORD)).rejects.toBeInstanceOf(MemoryToolRejectedError);
+      await expect(client.rememberJob(HIRED_AGENT_ID, CONTRACT, RECORD)).rejects.toBeInstanceOf(MemoryToolRejectedError);
       expect(callToolMock).toHaveBeenCalledTimes(1);
     });
 
@@ -92,7 +94,7 @@ describe("SibylMemoryClient", () => {
         .mockRejectedValueOnce(new Error("pipe broke mid-write"))
         .mockResolvedValueOnce(textResult({ entity: { body: RECORD } })); // reconcile recall finds it already there
       const client = new SibylMemoryClient();
-      await client.rememberTokenVerdict(CONTRACT, RECORD);
+      await client.rememberJob(HIRED_AGENT_ID, CONTRACT, RECORD);
       expect(callToolMock).toHaveBeenCalledTimes(2); // write attempt + reconcile recall, no resend
     });
 
@@ -103,7 +105,7 @@ describe("SibylMemoryClient", () => {
         .mockResolvedValueOnce(textResult({ entity: { body: staleRecord } })) // reconcile recall: stale, not the fresh write
         .mockResolvedValueOnce(textResult({ ok: true })); // resend succeeds
       const client = new SibylMemoryClient();
-      await client.rememberTokenVerdict(CONTRACT, RECORD);
+      await client.rememberJob(HIRED_AGENT_ID, CONTRACT, RECORD);
       expect(callToolMock).toHaveBeenCalledTimes(3);
     });
   });
@@ -206,21 +208,21 @@ describe("SibylMemoryClient", () => {
     it("returns the parsed requestId/fromBlock as bigints on a successful recall", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ entity: { body: { requestId: "42", fromBlock: "1000" } } }));
       const client = new SibylMemoryClient();
-      const result = await client.getPendingEscalation(CONTRACT);
+      const result = await client.getPendingEscalation(HIRED_AGENT_ID, CONTRACT);
       expect(result).toEqual({ requestId: 42n, fromBlock: 1000n });
     });
 
     it("returns null on a NOT_FOUND rejection, without retrying", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ code: "NOT_FOUND" }, true));
       const client = new SibylMemoryClient();
-      expect(await client.getPendingEscalation(CONTRACT)).toBeNull();
+      expect(await client.getPendingEscalation(HIRED_AGENT_ID, CONTRACT)).toBeNull();
       expect(callToolMock).toHaveBeenCalledTimes(1);
     });
 
     it("throws MemoryToolRejectedError on a real (non-NOT_FOUND) rejection", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ code: "VALIDATION_ERROR" }, true));
       const client = new SibylMemoryClient();
-      await expect(client.getPendingEscalation(CONTRACT)).rejects.toBeInstanceOf(MemoryToolRejectedError);
+      await expect(client.getPendingEscalation(HIRED_AGENT_ID, CONTRACT)).rejects.toBeInstanceOf(MemoryToolRejectedError);
     });
 
     it("retries a transport-level failure", async () => {
@@ -228,7 +230,7 @@ describe("SibylMemoryClient", () => {
         .mockRejectedValueOnce(new Error("stdio pipe closed"))
         .mockResolvedValueOnce(textResult({ entity: { body: { requestId: "1", fromBlock: "2" } } }));
       const client = new SibylMemoryClient();
-      expect(await client.getPendingEscalation(CONTRACT)).toEqual({ requestId: 1n, fromBlock: 2n });
+      expect(await client.getPendingEscalation(HIRED_AGENT_ID, CONTRACT)).toEqual({ requestId: 1n, fromBlock: 2n });
       expect(callToolMock).toHaveBeenCalledTimes(2);
     });
   });
@@ -237,7 +239,7 @@ describe("SibylMemoryClient", () => {
     it("writes successfully on the first attempt, serializing bigints as strings", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ ok: true }));
       const client = new SibylMemoryClient();
-      await client.setPendingEscalation(CONTRACT, 42n, 1000n);
+      await client.setPendingEscalation(HIRED_AGENT_ID, CONTRACT, 42n, 1000n);
       expect(callToolMock).toHaveBeenCalledTimes(1);
       const [sentCall] = callToolMock.mock.calls as [{ name: string; arguments: { body: unknown } }][];
       expect(sentCall?.[0].name).toBe("memory_remember");
@@ -247,7 +249,7 @@ describe("SibylMemoryClient", () => {
     it("throws MemoryToolRejectedError immediately on a real rejection — no reconcile re-read", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ code: "CAP_EXCEEDED" }, true));
       const client = new SibylMemoryClient();
-      await expect(client.setPendingEscalation(CONTRACT, 42n, 1000n)).rejects.toBeInstanceOf(MemoryToolRejectedError);
+      await expect(client.setPendingEscalation(HIRED_AGENT_ID, CONTRACT, 42n, 1000n)).rejects.toBeInstanceOf(MemoryToolRejectedError);
       expect(callToolMock).toHaveBeenCalledTimes(1);
     });
 
@@ -256,7 +258,7 @@ describe("SibylMemoryClient", () => {
         .mockRejectedValueOnce(new Error("pipe broke mid-write"))
         .mockResolvedValueOnce(textResult({ entity: { body: { requestId: "42", fromBlock: "1000" } } }));
       const client = new SibylMemoryClient();
-      await client.setPendingEscalation(CONTRACT, 42n, 1000n);
+      await client.setPendingEscalation(HIRED_AGENT_ID, CONTRACT, 42n, 1000n);
       expect(callToolMock).toHaveBeenCalledTimes(2);
     });
 
@@ -266,7 +268,7 @@ describe("SibylMemoryClient", () => {
         .mockResolvedValueOnce(textResult({ code: "NOT_FOUND" }, true))
         .mockResolvedValueOnce(textResult({ ok: true }));
       const client = new SibylMemoryClient();
-      await client.setPendingEscalation(CONTRACT, 42n, 1000n);
+      await client.setPendingEscalation(HIRED_AGENT_ID, CONTRACT, 42n, 1000n);
       expect(callToolMock).toHaveBeenCalledTimes(3);
     });
   });
@@ -275,20 +277,20 @@ describe("SibylMemoryClient", () => {
     it("clears successfully on the first attempt", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ ok: true, archived: { category: "pending_escalation", name: CONTRACT } }));
       const client = new SibylMemoryClient();
-      await client.clearPendingEscalation(CONTRACT);
+      await client.clearPendingEscalation(HIRED_AGENT_ID, CONTRACT);
       expect(callToolMock).toHaveBeenCalledTimes(1);
     });
 
     it("treats a NOT_FOUND rejection as a successful no-op — already cleared", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ code: "NOT_FOUND" }, true));
       const client = new SibylMemoryClient();
-      await expect(client.clearPendingEscalation(CONTRACT)).resolves.toBeUndefined();
+      await expect(client.clearPendingEscalation(HIRED_AGENT_ID, CONTRACT)).resolves.toBeUndefined();
     });
 
     it("throws MemoryToolRejectedError on a real (non-NOT_FOUND) rejection", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ code: "VALIDATION_ERROR" }, true));
       const client = new SibylMemoryClient();
-      await expect(client.clearPendingEscalation(CONTRACT)).rejects.toBeInstanceOf(MemoryToolRejectedError);
+      await expect(client.clearPendingEscalation(HIRED_AGENT_ID, CONTRACT)).rejects.toBeInstanceOf(MemoryToolRejectedError);
     });
 
     it("retries a transport-level failure — without this, a stale pending-escalation record could block real payments forever", async () => {
@@ -296,7 +298,7 @@ describe("SibylMemoryClient", () => {
         .mockRejectedValueOnce(new Error("stdio pipe closed"))
         .mockResolvedValueOnce(textResult({ ok: true, archived: { category: "pending_escalation", name: CONTRACT } }));
       const client = new SibylMemoryClient();
-      await expect(client.clearPendingEscalation(CONTRACT)).resolves.toBeUndefined();
+      await expect(client.clearPendingEscalation(HIRED_AGENT_ID, CONTRACT)).resolves.toBeUndefined();
       expect(callToolMock).toHaveBeenCalledTimes(2);
     });
   });

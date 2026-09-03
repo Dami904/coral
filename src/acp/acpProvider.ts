@@ -49,8 +49,12 @@ export function usdc6dpToDollars(amountUsdc6dp: bigint): number {
  * (see live-acp-provider.ts's handling of those instead).
  */
 export function formatAcpDeliverable(outcome: Extract<HandleOutcome, { outcome: "cache_hit" | "paid" }>): string {
+  // `outcome.output` is the core's generic field name; the deliverable
+  // itself keeps `tier` — this deployment's one real hired agent (Sibyl)
+  // really is a conviction tier, and there's no reason to break that
+  // wire-facing label just because the core underneath it generalized.
   return JSON.stringify({
-    tier: outcome.tier,
+    tier: outcome.output,
     note: "Conviction tier, not a safety/scam verdict.",
   });
 }

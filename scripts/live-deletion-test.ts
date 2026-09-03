@@ -13,9 +13,9 @@
  */
 import { unlinkSync } from "node:fs";
 import { loadConfig } from "../src/config.js";
-import { handleTokenQuery, type HandleTokenQueryDeps } from "../src/decisionCore.js";
+import { handleJobQuery, type HandleTokenQueryDeps } from "../src/decisionCore.js";
 import { StubIntelligenceClient } from "../src/intelligence/stubIntelligenceClient.js";
-import { makeChainClient, makeMemoryClient, resetMemoryDb } from "./lib/liveHarness.js";
+import { makeChainClient, makeMemoryClient, resetMemoryDb, SIBYL_HIRED_AGENT_ID } from "./lib/liveHarness.js";
 
 const TEST_CONTRACT = "0x000000000000000000000000000000c0ffee03";
 
@@ -42,12 +42,12 @@ async function main() {
   let memory = makeMemoryClient(config);
 
   console.log(`[deletion-test] call 1 (expect miss -> real payment) for ${TEST_CONTRACT}`);
-  const first = await handleTokenQuery(TEST_CONTRACT, { ...commonDeps, memory });
+  const first = await handleJobQuery(SIBYL_HIRED_AGENT_ID, TEST_CONTRACT, { ...commonDeps, memory });
   console.log("[deletion-test] result 1:", first);
   if (first.outcome !== "paid") throw new Error(`expected "paid", got "${first.outcome}"`);
 
   console.log(`[deletion-test] call 2 (expect cache hit) for ${TEST_CONTRACT}`);
-  const second = await handleTokenQuery(TEST_CONTRACT, { ...commonDeps, memory });
+  const second = await handleJobQuery(SIBYL_HIRED_AGENT_ID, TEST_CONTRACT, { ...commonDeps, memory });
   console.log("[deletion-test] result 2:", second);
   if (second.outcome !== "cache_hit") throw new Error(`expected "cache_hit", got "${second.outcome}"`);
 
@@ -57,7 +57,7 @@ async function main() {
 
   memory = makeMemoryClient(config);
   console.log(`[deletion-test] call 3, same contract, AFTER deletion (expect miss -> real payment again) for ${TEST_CONTRACT}`);
-  const third = await handleTokenQuery(TEST_CONTRACT, { ...commonDeps, memory });
+  const third = await handleJobQuery(SIBYL_HIRED_AGENT_ID, TEST_CONTRACT, { ...commonDeps, memory });
   console.log("[deletion-test] result 3:", third);
   if (third.outcome !== "paid") throw new Error(`expected "paid" again after deletion, got "${third.outcome}"`);
 

@@ -364,7 +364,7 @@ real job existed to trigger them**: neither the `job.funded` handler nor
 the resume-poll `setInterval` tick serialized against a duplicate/
 overlapping invocation for the same job — a replayed SSE event, or a
 resume attempt slower than `RESUME_POLL_MS`, could have run
-`handleTokenQuery`/`resumeAfterApproval` + `session.submit()` twice for
+`handleJobQuery`/`resumeAfterApproval` + `session.submit()` twice for
 one logical job. Fixed by extracting `httpGatewayServer.ts`'s existing,
 already-tested per-contract lock into `src/lib/keyedLock.ts` and reusing
 it here, keyed by `jobId`, for both paths.
@@ -404,7 +404,7 @@ it here, keyed by `jobId`, for both paths.
   transition is a real signed tx via the Privy adapter, surfaced as an
   `entry` SSE event.
 - **Maps onto `handleGatewayQuery` (Direction B — another agent pays
-  Coral), not `handleTokenQuery`.** ACP's Provider role gets paid for a
+  Coral), not `handleJobQuery`.** ACP's Provider role gets paid for a
   job; that's the same direction as Coral's existing Ping-based gateway
   mode, not Coral's own outbound SpendGuard-gated spend to Sibyl.
 - **Not yet verified** (next required step before writing a client, per
@@ -414,3 +414,53 @@ it here, keyed by `jobId`, for both paths.
   itself costs a fee or requires KYC (gated behind the dashboard, not
   discoverable from the SDK/README), and the per-job protocol fee
   schedule.
+
+## Generalizing the job cache beyond Sibyl (verified 2026-09-04)
+
+Coral's core (`src/decisionCore.ts`) used to cache exactly one thing — a
+token contract address's conviction tier from Sibyl's x402 endpoint —
+with every type and method name hardcoded to that single use case
+(`TokenVerdictRecord`, `recallTokenVerdict`, `CATEGORY = "token_verdict"`,
+`IntelligencePort.checkToken(contract, ...): Promise<{tier, ...}>`).
+Generalized so a future different hired-agent integration is
+architecturally possible without another rearchitecture — real interface
+changes, not just a rename, but deliberately without inventing a second
+fake integration (no real second hired agent exists yet, and this
+project's own rule is never to guess at unverified external API
+behavior).
+
+**What changed**: `MemoryPort.recallJob(hiredAgentId, input)`/
+`rememberJob(hiredAgentId, input, record: JobRecord)` replace the
+contract-specific pair; `IntelligencePort.invoke(input, paymentTxHash):
+Promise<{output, raw, sourceEndpoint}>` replaces `checkToken`;
+`handleTokenQuery` is now `handleJobQuery(hiredAgentId, input, deps,
+requester?)`. Sibyl Memory's own MCP interface needed zero changes —
+confirmed by reading `sibyl_memory_mcp/server.py`'s tool signatures
+(above): `category`/`name` are arbitrary caller-controlled strings with
+no protocol-level constraint, so `hiredAgentId` doubling as the memory
+category is not a new pattern, just a new value.
+
+**Wire-level compatibility was a deliberate, separate decision**: the
+public HTTP gateway's JSON response (`GET /check`) and ACP's job
+deliverable both still say `tier`, not `output` — mapped explicitly at
+each entry point's own response-building edge
+(`src/http/httpGatewayServer.ts`, `src/acp/acpProvider.ts`'s
+`formatAcpDeliverable`). The live, public gateway
+(`https://3-216-178-169.nip.io`) and its deployed frontend widget
+(`coral-landing/index.html`, reading `data.tier`) depend on that exact
+shape, and the rename has zero architectural payoff at the wire level —
+only the internal type needed to stop assuming every hired agent's
+result is called a "conviction tier."
+
+**Real, accepted consequence, confirmed live**: `hiredAgentId` (e.g.
+`sibyl-conviction-check`, centralized in `scripts/lib/liveHarness.ts`'s
+`SIBYL_HIRED_AGENT_ID`) is now the Sibyl Memory category the job cache
+writes under, replacing the old fixed `"token_verdict"` constant.
+Existing cache entries under the old category become unreachable on
+redeploy — the same effect as deleting memory (an already-tested,
+understood event in this project via the deletion-test gate), not a bug.
+Re-ran `pnpm live:deletion-test` and `pnpm live:day5-smoke` against the
+real deployed Base Sepolia `SpendGuard` after this change: cache miss →
+real payment → cache hit → delete → real payment again, all still work
+correctly under the new category scheme — confirmed live, not just by
+the type checker passing.
