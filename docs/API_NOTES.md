@@ -464,3 +464,52 @@ real deployed Base Sepolia `SpendGuard` after this change: cache miss →
 real payment → cache hit → delete → real payment again, all still work
 correctly under the new category scheme — confirmed live, not just by
 the type checker passing.
+
+## ACP buyer side (verified 2026-09-04)
+
+Researched before writing `scripts/live-acp-buyer-test.ts`, same standard
+as the provider side. The SDK's own `src/examples/basic/buyer.ts` example
+has the **same real bug** already found in `seller.ts`: it calls
+`AcpAgent.create({ provider: ... })`, but `createAcpClients` only ever
+checks `evmProvider`/`solanaProvider` — use `evmProvider:`.
+
+- **Discovery**: `agent.getAgentByWalletAddress(walletAddress)` for a
+  known seller (Coral's case), or `agent.browseAgents(keyword, params?)`
+  for keyword search.
+- **Job creation**: `createJobByOfferingName(chainId, offeringName,
+  providerAddress, requirementData, opts?)` — simpler than the example's
+  manual `getAgentByWalletAddress` + `offerings.find(...)` +
+  `createJobFromOffering`, since both Coral's wallet address and offering
+  name are already known. `requirementData` is a plain object; the SDK
+  stringifies it.
+- **Funding**: on `budget.set`, `await session.fetchJob(); await
+  session.fund();` — no amount, reads the on-chain-set budget directly.
+- **Receiving the deliverable — evaluation mode matters.** Omitting
+  `evaluatorAddress` defaults to skip-evaluation: the job jumps straight
+  to `job.completed`, and `job.submitted` (which carries
+  `entry.event.deliverable`) never fires on the buyer side — you'd never
+  see the answer print. Passing `evaluatorAddress: buyerAddress` (self-
+  evaluation) makes `job.submitted` fire with the deliverable, at the
+  cost of one extra `session.complete()` call to release payment.
+  `live-acp-buyer-test.ts` uses self-evaluation deliberately, to actually
+  show what came back.
+- **Funding token is NOT Coral's own MockUSDC.** The ACP contract's
+  designated Base Sepolia USDC is `0xECc22a8F6fD62388498fBa19813E214605a2BDb3`
+  (`USDC_ADDRESSES[baseSepolia.id]`, `dist/core/constants.js`) — a
+  completely separate token from `0xfC10f0A357c74318451A583C30A1fb5C8c7a2407`
+  (Coral's `MockUSDC`, used by `SpendGuard`). Two unrelated testnet
+  tokens for two unrelated systems.
+- **Gas is very likely sponsored on Base Sepolia.** `ERC20_SPONSORED_CHAINS`
+  includes `baseSepolia`, and `privyAlchemyEvmProviderAdapter.js`
+  constructs real `paymaster`/`paymaster_data` fields (Alchemy's ERC-4337
+  gas sponsorship) — a buyer wallet likely doesn't need native Base
+  Sepolia ETH, only the ACP-designated USDC above. **Not fully
+  verified**: whether sponsorship is unconditional or needs an
+  Alchemy-side policy Virtuals configures per-agent.
+- **Not verified at all** (server-side/dashboard rules, out of reach from
+  SDK source): whether a buyer needs the same `app.virtuals.io/acp/new`
+  registration flow as a seller, whether `createJobFromOffering` does any
+  client-side requirement-schema validation before the chain call, and
+  whether any faucet exists for the ACP-designated USDC token. Check the
+  Virtuals dashboard/Discord for the last one before attempting to fund a
+  real job.

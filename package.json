@@ -24,7 +24,8 @@
     "live:escalation-resume-demo": "tsx scripts/live-escalation-resume-demo.ts",
     "live:ping-register": "tsx scripts/live-ping-register.ts",
     "live:mainnet-smoke": "tsx scripts/live-mainnet-smoke.ts",
-    "live:acp-provider": "tsx scripts/live-acp-provider.ts"
+    "live:acp-provider": "tsx scripts/live-acp-provider.ts",
+    "live:acp-buyer-test": "tsx scripts/live-acp-buyer-test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
