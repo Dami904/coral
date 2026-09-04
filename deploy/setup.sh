@@ -106,8 +106,9 @@ fi
 echo "== systemd units =="
 cp "$APP_DIR/deploy/coral-ping-listener.service" /etc/systemd/system/
 cp "$APP_DIR/deploy/coral-http-server.service" /etc/systemd/system/
+cp "$APP_DIR/deploy/coral-acp-provider.service" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable coral-ping-listener coral-http-server
+systemctl enable coral-ping-listener coral-http-server coral-acp-provider
 
 echo "== Caddy: TLS-terminating reverse proxy in front of the HTTP gateway =="
 # The gateway itself (src/http/httpGatewayServer.ts) only ever speaks plain
@@ -156,10 +157,15 @@ Setup done. Next steps:
   2. sudo systemctl start coral-http-server
      (and coral-ping-listener once you've deliberately decided to register
      on Ping — see scripts/live-ping-register.ts's own warning; that's a
-     real, one-time mainnet spend, not something this script does for you.)
+     real, one-time mainnet spend, not something this script does for you.
+     And coral-acp-provider once ACP_WALLET_ADDRESS/ACP_WALLET_ID/
+     ACP_SIGNER_PRIVATE_KEY/ACP_OFFERING_NAME are filled in and the
+     offering is registered on the Virtuals dashboard — see
+     docs/API_NOTES.md's ACP section.)
   3. curl https://<this-vm's-public-IP-with-dashes>.nip.io/health
      (or curl http://localhost:8787/health directly on the box — 8787
      itself is not exposed to the internet, only Caddy's 80/443 are.)
   4. journalctl -u coral-http-server -f    # tail logs
      journalctl -u caddy -f                # tail the TLS proxy's logs
+     journalctl -u coral-acp-provider -f    # tail the ACP provider's logs
 EOF

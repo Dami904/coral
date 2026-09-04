@@ -21,7 +21,7 @@ control the same way.
 
 ## What actually runs
 
-Three independent services, two `systemd` units (`deploy/*.service`)
+Four independent services, three `systemd` units (`deploy/*.service`)
 wrapping existing `pnpm live:*` scripts — nothing new, no separate
 deploy-only code path — plus Caddy as a TLS-terminating reverse proxy:
 
@@ -35,6 +35,15 @@ deploy-only code path — plus Caddy as a TLS-terminating reverse proxy:
   registration is real, one-time, irreversible mainnet gas spend, exactly
   the kind of action `CLAUDE.md` says needs an explicit human decision,
   not something a setup script does for you.
+- **`coral-acp-provider`** — `scripts/live-acp-provider.ts`, Coral as a
+  Virtuals Protocol ACP Provider (see `docs/API_NOTES.md`'s ACP section).
+  Outbound-only (holds an SSE connection to Virtuals' backend), no inbound
+  port needed. Needs `ACP_WALLET_ADDRESS`/`ACP_WALLET_ID`/
+  `ACP_SIGNER_PRIVATE_KEY`/`ACP_OFFERING_NAME` in `coral.env` and a
+  registered offering on the Virtuals dashboard before starting — enabled
+  by `setup.sh` but not started automatically, same reasoning as the Ping
+  listener (real credentials/registration required first, not something
+  to auto-start).
 - **Caddy** — reverse-proxies `443` to `127.0.0.1:8787` and gets a real
   Let's Encrypt certificate automatically, using a hostname derived from
   the VM's own public IP via [nip.io](https://nip.io) (`3-216-178-169.nip.io`
@@ -48,7 +57,7 @@ deploy-only code path — plus Caddy as a TLS-terminating reverse proxy:
   since every route is an unauthenticated GET with no cookie/session to
   leak — so no CORS config is needed in Caddy either.
 
-All three read secrets from `/etc/coral/coral.env` (never the repo's own
+All four read secrets from `/etc/coral/coral.env` (never the repo's own
 `.env`, and never committed) and the app services write the memory DB to
 `/var/lib/coral/memory.db` — a path outside the git-managed `$APP_DIR`
 (`/opt/coral`) so a `git pull`/redeploy never touches it.
@@ -106,9 +115,12 @@ All three read secrets from `/etc/coral/coral.env` (never the repo's own
    `## TLS` section below if this doesn't resolve.
    Bring up `coral-ping-listener` separately, only after registering on
    Ping deliberately (see the warning above and
-   `scripts/live-ping-register.ts`'s own doc comment).
+   `scripts/live-ping-register.ts`'s own doc comment). Bring up
+   `coral-acp-provider` separately too, only after filling in the ACP
+   credentials and registering an offering on the Virtuals dashboard.
 7. **Logs:** `journalctl -u coral-http-server -f` /
-   `journalctl -u coral-ping-listener -f` / `journalctl -u caddy -f`.
+   `journalctl -u coral-ping-listener -f` /
+   `journalctl -u coral-acp-provider -f` / `journalctl -u caddy -f`.
 
 ## Redeploying after a code change
 

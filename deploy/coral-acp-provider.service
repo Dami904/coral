@@ -1,0 +1,29 @@
+[Unit]
+Description=Coral - Virtuals Protocol ACP Provider (scripts/live-acp-provider.ts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=coral
+WorkingDirectory=/opt/coral
+EnvironmentFile=/etc/coral/coral.env
+ExecStart=/usr/bin/pnpm live:acp-provider
+Restart=on-failure
+RestartSec=5
+# Holds an SSE connection open to Virtuals' backend and a Privy-managed
+# wallet's signer key — no inbound port needed (like coral-ping-listener),
+# outbound-only. Requires ACP_WALLET_ADDRESS/ACP_WALLET_ID/
+# ACP_SIGNER_PRIVATE_KEY/ACP_OFFERING_NAME in coral.env — see
+# docs/API_NOTES.md's ACP section. Not started by setup.sh automatically;
+# fill in coral.env and start it deliberately once the offering is
+# registered on the Virtuals dashboard.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/coral
+# tsx needs a writable /tmp for its IPC socket — see coral-http-server.service's
+# identical comment for the failure this fixes.
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
