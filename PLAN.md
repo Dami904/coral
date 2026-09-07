@@ -851,3 +851,25 @@ Files: `contracts/SpendGuard.sol`, `contracts/MockUSDC.sol`,
     reported the last `live:day3-smoke` run's 1 cache-hit + 1 real
     payment (the local demo DB is wiped clean at the start of every
     `live:*` script, so this is the true current state, not a bug).
+- **Video-prep bug fix + HTTP wire field rename** (2026-09-07): while
+  prepping the gate-demo recording, found `scripts/live-demo-query.ts` and
+  `scripts/live-seed-cache-demo.ts` were still on `StubIntelligenceClient`
+  (a Day-1 placeholder that always returns `"unknown-stub"` regardless of
+  input) instead of `X402IntelligenceClient` against the local mock — every
+  other `live:*` script had already been switched, these two were missed.
+  Fixed both to match `live-day5-smoke.ts`'s pattern; verified live, two
+  fresh-process calls on the same token: first returned `output:
+  "high_conviction"` with a real testnet payment tx hash, second returned
+  `cache_hit` with the same tier, zero payment. `pnpm typecheck` clean.
+  - Separately, on request: renamed the HTTP gateway's wire field `tier` →
+    `output` in `src/http/httpGatewayServer.ts` (`GET /check`/`GET
+    /resume`, all three outcome branches that carry it), superseding the
+    "wire-level compatibility, deliberately unchanged" decision recorded
+    above under "Generalizing the job cache" — `coral-landing/index.html`'s
+    widget (`row("Conviction tier", data.tier)`) was updated in the same
+    change so nothing external still depends on the old name, and
+    `test/http/httpGatewayServer.test.ts`'s three assertions on `body.tier`
+    were updated to `body.output`. Deliberately scoped to the HTTP layer
+    only — ACP's `formatAcpDeliverable` (`src/acp/acpProvider.ts`) still
+    says `tier` and was left alone; no request came in to touch it, and
+    Virtuals-side buyers depend on that shape.

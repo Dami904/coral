@@ -837,7 +837,7 @@
           badge: data.outcome,
           html:
             badge +
-            row("Conviction tier", data.tier) +
+            row("Conviction tier", data.output) +
             (data.checkedAt ? row("Cached since", data.checkedAt) : "") +
             (data.txHash ? row("Payment tx", data.txHash.slice(0, 10) + "…" + data.txHash.slice(-6)) : "") +
             '<div class="note">' + esc(data.note) + "</div>",

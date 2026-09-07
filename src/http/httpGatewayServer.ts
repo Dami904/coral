@@ -63,16 +63,16 @@ async function handleCheck(
   const outcome = await withContractLock(contract, () => handleJobQuery(deps.hiredAgentId, contract, deps));
   switch (outcome.outcome) {
     case "cache_hit":
-      // Explicit field-by-field build, not a spread: `outcome.output` is
-      // the core's now-generic field name, but the wire response keeps
-      // `tier` — this deployment's one real hired agent (Sibyl) really is
-      // a conviction tier, and coral-landing's live widget already reads
-      // `data.tier`. A blind `{...outcome}` would leak `output` instead
-      // and silently break that widget.
-      sendJson(res, 200, { outcome: outcome.outcome, tier: outcome.output, checkedAt: outcome.checkedAt, note: "Conviction tier, not a safety/scam verdict." });
+      // Explicit field-by-field build, not a spread: keeps the wire shape
+      // stable regardless of what other fields HandleOutcome grows. `output`
+      // matches decisionCore's own generic field name now — this deployment's
+      // one real hired agent (Sibyl) happens to return a conviction tier, but
+      // the HTTP layer no longer hardcodes that framing (see coral-landing's
+      // widget, updated to match).
+      sendJson(res, 200, { outcome: outcome.outcome, output: outcome.output, checkedAt: outcome.checkedAt, note: "Conviction tier, not a safety/scam verdict." });
       return;
     case "paid":
-      sendJson(res, 200, { outcome: outcome.outcome, tier: outcome.output, txHash: outcome.txHash, note: "Conviction tier, not a safety/scam verdict." });
+      sendJson(res, 200, { outcome: outcome.outcome, output: outcome.output, txHash: outcome.txHash, note: "Conviction tier, not a safety/scam verdict." });
       return;
     case "pending_approval":
       sendJson(res, 202, {
@@ -122,7 +122,7 @@ async function handleResume(
       return;
     case "paid":
       // Explicit build, not a spread — same reasoning as handleCheck above.
-      sendJson(res, 200, { outcome: outcome.outcome, tier: outcome.output, txHash: outcome.txHash, note: "Conviction tier, not a safety/scam verdict." });
+      sendJson(res, 200, { outcome: outcome.outcome, output: outcome.output, txHash: outcome.txHash, note: "Conviction tier, not a safety/scam verdict." });
       return;
   }
 }

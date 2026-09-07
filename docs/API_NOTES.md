@@ -440,17 +440,18 @@ confirmed by reading `sibyl_memory_mcp/server.py`'s tool signatures
 no protocol-level constraint, so `hiredAgentId` doubling as the memory
 category is not a new pattern, just a new value.
 
-**Wire-level compatibility was a deliberate, separate decision**: the
-public HTTP gateway's JSON response (`GET /check`) and ACP's job
-deliverable both still say `tier`, not `output` — mapped explicitly at
-each entry point's own response-building edge
-(`src/http/httpGatewayServer.ts`, `src/acp/acpProvider.ts`'s
-`formatAcpDeliverable`). The live, public gateway
-(`https://3-216-178-169.nip.io`) and its deployed frontend widget
-(`coral-landing/index.html`, reading `data.tier`) depend on that exact
-shape, and the rename has zero architectural payoff at the wire level —
-only the internal type needed to stop assuming every hired agent's
-result is called a "conviction tier."
+**Wire-level compatibility was originally a deliberate, separate
+decision** to keep both `GET /check`'s JSON response and ACP's job
+deliverable saying `tier`, not `output`, since both `coral-landing`'s
+widget and any external ACP buyer already depended on that exact shape.
+**Since revised for the HTTP gateway** (2026-09-07, PLAN.md's "HTTP wire
+field rename" entry): `GET /check`/`GET /resume` now return `output`, not
+`tier` — `coral-landing/index.html`'s widget was updated in the same
+change, so nothing external is left depending on the old field name.
+**ACP's job deliverable (`src/acp/acpProvider.ts`'s
+`formatAcpDeliverable`) still says `tier`** — deliberately left alone,
+scoped separately, since Virtuals-side buyers depend on it and no request
+has come in to rename it.
 
 **Real, accepted consequence, confirmed live**: `hiredAgentId` (e.g.
 `sibyl-conviction-check`, centralized in `scripts/lib/liveHarness.ts`'s

@@ -138,18 +138,18 @@ describe("GET /check", () => {
     });
     const res = await fetch(`${baseUrl}/check?token=${CONTRACT}`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { outcome: string; tier: string };
+    const body = (await res.json()) as { outcome: string; output: string };
     expect(body.outcome).toBe("cache_hit");
-    expect(body.tier).toBe("high_conviction");
+    expect(body.output).toBe("high_conviction");
   });
 
   it("200s a fresh paid check on a cache miss — caller pays nothing, Coral's own guard does", async () => {
     currentDeps = deps({});
     const res = await fetch(`${baseUrl}/check?token=${CONTRACT}`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { outcome: string; tier: string };
+    const body = (await res.json()) as { outcome: string; output: string };
     expect(body.outcome).toBe("paid");
-    expect(body.tier).toBe("high_conviction");
+    expect(body.output).toBe("high_conviction");
   });
 
   it("503s when Coral's own SpendGuard policy blocks the payment", async () => {
@@ -242,9 +242,9 @@ describe("GET /resume", () => {
     });
     const res = await fetch(`${baseUrl}/resume?contract=${CONTRACT}&requestId=1&fromBlock=1`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { outcome: string; tier: string };
+    const body = (await res.json()) as { outcome: string; output: string };
     expect(body.outcome).toBe("paid");
-    expect(body.tier).toBe("high_conviction");
+    expect(body.output).toBe("high_conviction");
   });
 });
 
