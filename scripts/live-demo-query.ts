@@ -1,0 +1,50 @@
+/**
+ * One query, one fresh OS process, then exit. Deliberately does NOT reset
+ * the memory DB and holds no state across invocations — unlike
+ * live-deletion-test.ts (which runs its whole miss/hit/delete/miss
+ * sequence inside one continuous process), this script exists specifically
+ * so each call in the demo video is a genuinely separate process. That's
+ * the literal thing the eligibility gate asks for ("recall and use
+ * persisted context in a fresh session"): the only way this process can
+ * possibly know about a prior call is the on-disk SQLite file, since
+ * nothing else survives between invocations of a short-lived script.
+ *
+ * Real (tiny) testnet payment on a cache miss — needs a funded agent
+ * wallet, hence the live: prefix per CLAUDE.md.
+ *
+ * Run: pnpm live:demo-query [tokenAddress]
+ *   (defaults to a fixed demo token if none given)
+ */
+import { loadConfig } from "../src/config.js";
+import { handleJobQuery } from "../src/decisionCore.js";
+import { StubIntelligenceClient } from "../src/intelligence/stubIntelligenceClient.js";
+import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID } from "./lib/liveHarness.js";
+
+const DEFAULT_TOKEN = "0x000000000000000000000000000000d3410a11";
+
+async function main(): Promise<void> {
+  const token = process.argv[2] ?? DEFAULT_TOKEN;
+  const config = loadConfig();
+  const chain = makeChainClient(config);
+  const memory = makeMemoryClient(config);
+  const intelligence = new StubIntelligenceClient();
+
+  console.log(`[demo-query] pid ${process.pid.toString()}, fresh process, querying ${token}`);
+  const result = await handleJobQuery(SIBYL_HIRED_AGENT_ID, token, {
+    memory,
+    chain,
+    intelligence,
+    payTo: config.vendorPayTo,
+    priceUsdc6dp: 100_000n,
+    staleWindowMs: 60 * 60 * 1000,
+  });
+  console.log(`[demo-query] outcome: ${result.outcome}`);
+  console.log(result);
+
+  await memory.close();
+}
+
+main().catch((err: unknown) => {
+  console.error("[demo-query] FAILED:", err);
+  process.exitCode = 1;
+});

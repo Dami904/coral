@@ -506,10 +506,82 @@ checks `evmProvider`/`solanaProvider` — use `evmProvider:`.
   Sepolia ETH, only the ACP-designated USDC above. **Not fully
   verified**: whether sponsorship is unconditional or needs an
   Alchemy-side policy Virtuals configures per-agent.
-- **Not verified at all** (server-side/dashboard rules, out of reach from
+- **Still not verified** (server-side/dashboard rules, out of reach from
   SDK source): whether a buyer needs the same `app.virtuals.io/acp/new`
-  registration flow as a seller, whether `createJobFromOffering` does any
-  client-side requirement-schema validation before the chain call, and
-  whether any faucet exists for the ACP-designated USDC token. Check the
-  Virtuals dashboard/Discord for the last one before attempting to fund a
-  real job.
+  registration flow as a seller, and whether `createJobFromOffering` does
+  any client-side requirement-schema validation before the chain call.
+- **Buyer registration answered, partially**: a separate buyer identity
+  (own `ACP_BUYER_*` credentials, no seller-side dashboard setup beyond
+  what was already needed to obtain those credentials) successfully
+  authenticated and reached `createJobByOfferingName` against Coral's
+  real registered offering — so full seller-style onboarding is NOT a
+  hard prerequisite for a buyer to at least initiate a job.
+- **The ACP-designated Base Sepolia USDC faucet question is answered: no
+  public faucet, root-caused not guessed (2026-09-06).** The job-creation
+  call reproducibly hit a `400 Bad Request` from
+  `api.acp.virtuals.io/wallets/alchemy-rpc`'s `wallet_prepareCalls`
+  method on every attempt. Root cause, confirmed on-chain via `cast call
+  balanceOf`, not assumed: the buyer wallet held `0` of the
+  ACP-designated token (`0xECc22a8F6fD62388498fBa19813E214605a2BDb3`) —
+  a faucet claim had landed 20 USDC on **Circle's real Base Sepolia USDC**
+  (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) instead, a completely
+  different token from the one ACP actually requires (see the entry
+  above — this is now the *third* distinct testnet USDC-shaped token in
+  play across this repo: Coral's own `MockUSDC`, Circle's real testnet
+  USDC used by the redeployed `SpendGuard`, and this ACP-designated one).
+  Checking the ACP token's on-chain holder count showed only ~35
+  addresses ever held it — strong evidence it's a limited/permissioned
+  token Virtuals distributes manually on request, not a public
+  self-serve faucet. **Getting a real ACP buyer job to complete on
+  testnet requires asking Virtuals directly (Discord/dashboard support)
+  for an allocation to the buyer wallet** — nothing else in this repo can
+  work around that.
+- **This is a testnet-only problem — confirmed via the SDK's own
+  `dist/core/constants.js` (2026-09-06).** `USDC_ADDRESSES[base.id]`
+  (Base mainnet) is `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` — the
+  same real, ordinary Circle USDC already used everywhere else mainnet
+  is referenced in this repo (Sibyl's real x402 `payTo`/`asset`,
+  `MAINNET_USDC_ADDRESS`'s default in `src/config.ts`). The limited
+  `0xECc22a8F...` token is Base Sepolia/BSC Testnet/Robinhood-Testnet
+  only — Virtuals' own testnet stand-in, not something ACP inherently
+  needs. A mainnet buyer with ordinary USDC would hit none of this.
+  Also confirmed from the same file: `ACP_CONTRACT_ADDRESSES[base.id]`
+  (`0x238E541BfefD82238730D00a2208E5497F1832E0`) differs from the
+  testnet ACP contract (`0x0b93793923CD5De81850aF8604a233f3f24d461e`) —
+  moving Coral's ACP provider to mainnet means re-registering against a
+  different contract, not just swapping the USDC address.
+
+## Privy signer keys can be rotated with no notification (confirmed 2026-09-06)
+
+A Privy-managed wallet's authorization key (the `ACP_SIGNER_PRIVATE_KEY`/
+`ACP_BUYER_SIGNER_PRIVATE_KEY` shape, `MIGH...`-prefixed PKCS#8) is not
+guaranteed to stay valid for the life of a deployment — Coral's provider
+wallet had one silently rotated on Privy/Virtuals' side sometime between
+Sep 4 and Sep 6, with no notification to this repo. Every `signMessage`
+call (`AcpApiClient.authenticate`, via
+`privyAlchemyEvmProviderAdapter.ts`'s `serverPost` to
+`api.privy.io/v1/wallets/...`) then failed with a consistent `Server
+error 500` — not a `401`/`403`, which is why this reads as a backend
+error rather than an obviously-stale-credential error at first glance.
+
+How this was actually diagnosed, not guessed:
+- Confirmed Privy's general API was reachable and healthy (a plain
+  unauthenticated request returned a normal `308`, not `500`) and the
+  host's clock was in sync — ruled out a broad Privy outage or a
+  clock-skew signature-validity issue.
+- Ran a second, completely independent wallet (`scripts/live-acp-buyer-test.ts`)
+  through the identical SDK code path — its `signMessage`/`authenticate`
+  call succeeded cleanly. This isolated the failure to one specific
+  wallet's credential, not a systemic Privy or SDK problem.
+- Confirmed directly, without ever exposing the private key value: `openssl
+  pkey -in <keyfile> -pubout -outform DER | base64` derives the public key
+  from a PKCS#8 private key; run inside a single remote shell command that
+  only ever returned a MATCH/NO-MATCH boolean, this showed the deployed
+  key's derived public key did NOT match the public key shown on the
+  Virtuals dashboard's Signers tab for that wallet — conclusive proof of a
+  stale key, not an inference.
+
+Fix: regenerate the signer on the dashboard (scope it "Virtuals only" —
+this wallet never needs to sign anything outside Virtuals/ACP calls) and
+redeploy the new key. No code change needed or possible; this is a
+third-party credential lifecycle fact, not a bug in this repo.

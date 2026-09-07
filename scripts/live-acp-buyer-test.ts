@@ -51,6 +51,7 @@
  *
  * Run: pnpm live:acp-buyer-test
  */
+import "dotenv/config";
 import { baseSepolia } from "viem/chains";
 import { AcpAgent, PrivyAlchemyEvmProviderAdapter, type JobRoomEntry, type JobSession } from "@virtuals-protocol/acp-node-v2";
 

@@ -13,6 +13,7 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json",
     "deploy:testnet": "forge script script/Deploy.s.sol:Deploy --rpc-url base_sepolia --broadcast",
+    "deploy:testnet-real-usdc": "forge script script/DeployRealUsdc.s.sol:DeployRealUsdc --rpc-url base_sepolia --broadcast",
     "deploy:mainnet": "forge script script/DeployMainnet.s.sol:DeployMainnet --rpc-url base_mainnet --broadcast --verify",
     "mock:x402": "node mock-x402-server/server.mjs",
     "live:day3-smoke": "tsx scripts/live-day3-smoke.ts",
@@ -25,7 +26,10 @@
     "live:ping-register": "tsx scripts/live-ping-register.ts",
     "live:mainnet-smoke": "tsx scripts/live-mainnet-smoke.ts",
     "live:acp-provider": "tsx scripts/live-acp-provider.ts",
-    "live:acp-buyer-test": "tsx scripts/live-acp-buyer-test.ts"
+    "live:acp-buyer-test": "tsx scripts/live-acp-buyer-test.ts",
+    "report:cache-savings": "tsx scripts/cache-savings-report.ts",
+    "live:seed-cache-demo": "tsx scripts/live-seed-cache-demo.ts",
+    "live:demo-query": "tsx scripts/live-demo-query.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

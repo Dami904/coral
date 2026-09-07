@@ -7,6 +7,26 @@ const PAYMENT_CATEGORY = "incoming_payment";
 const PENDING_ESCALATION_CATEGORY = "pending_escalation";
 const TRANSPORT_RETRY = { maxAttempts: 3, baseDelayMs: 200 };
 
+/** Shape of one `memory_search(tiers:"journal")` hit — confirmed by reading
+ * sibyl_memory_client's own search() implementation (client.py), not
+ * guessed: journal_events_fts is a standalone FTS5 index over the
+ * concatenated evaluated/acted/forward/extra JSON columns, so a hit's
+ * `body` is those four fields decoded, not a flattened record. */
+export type JournalHit = {
+  tier: "journal";
+  key: string;
+  category: null;
+  body: {
+    evaluated: unknown;
+    acted: { kind: string; body: Record<string, unknown> };
+    forward: unknown;
+    extra: { category?: string; name?: string } | null;
+  };
+  snippet: string;
+  rank: number;
+  ts: string;
+};
+
 export type SibylMemoryClientConfig = {
   /** Defaults to "sibyl-memory-mcp" — must be on PATH (pip install sibyl-memory-mcp). */
   command?: string;
@@ -344,6 +364,31 @@ export class SibylMemoryClient implements MemoryPort {
       });
       await this.writeSetPendingEscalation(hiredAgentId, input, requestId, fromBlock);
     }
+  }
+
+  /**
+   * One-off reporting helper — deliberately NOT part of MemoryPort, since
+   * nothing in the decision core needs to read the journal back (it only
+   * ever writes to it). Used by scripts/cache-savings-report.ts.
+   *
+   * Real gotcha confirmed by reading sibyl_memory_client's search()
+   * source, not assumed: the journal tier is capped at floor(limit/4)
+   * regardless of what's requested, and this MCP tool's own `limit` param
+   * caps at 50 — so a single call returns at most ~12 journal hits, and
+   * there's no offset/pagination in this API. A caller sampling a large
+   * journal needs multiple differently-worded queries, not one big one.
+   */
+  async searchJournal(query: string, limit = 50): Promise<JournalHit[]> {
+    const result = await this.callTool(
+      "memory_search",
+      { query, limit, tiers: "journal" },
+      { retryTransportFailures: true },
+    );
+    if (result.isError) {
+      throw new MemoryToolRejectedError("memory_search", result.parsed);
+    }
+    const payload = result.parsed as { results?: unknown };
+    return Array.isArray(payload.results) ? (payload.results as JournalHit[]) : [];
   }
 
   async clearPendingEscalation(hiredAgentId: HiredAgentId, input: string): Promise<void> {

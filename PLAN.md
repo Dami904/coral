@@ -708,3 +708,146 @@ Files: `contracts/SpendGuard.sol`, `contracts/MockUSDC.sol`,
     understood event this project is judged on), not data loss. See
     `docs/DEPLOYMENT.md`'s redeploy section and `docs/API_NOTES.md`'s
     generalization entry for the full detail.
+- **Switching the testnet guard from MockUSDC to real Circle testnet USDC**
+  (2026-09-06): decided against continuing to demo on a custom `MockUSDC`
+  token nobody recognizes — a judge reading Basescan sees Circle's real,
+  labeled testnet USDC instead. `SpendGuard.usdc` is `immutable`
+  (`contracts/SpendGuard.sol:12`), so this is a redeploy, not a config
+  flip: `script/DeployRealUsdc.s.sol` (new, mirrors `Deploy.s.sol`'s policy
+  thresholds exactly, only the token differs) wraps Circle's published
+  Base Sepolia USDC — `0x036CbD53842c5426634e7929541eC2318f3dCF7e`,
+  confirmed against Circle's own docs, not assumed — instead of deploying
+  a mock. `pnpm deploy:testnet-real-usdc` runs it.
+  - User funded the existing owner/deployer wallet
+    (`0x2993f576Aa99C82188242735806b3a0Dce96B787`) with 20 real testnet
+    USDC. Deployed new `SpendGuard` at
+    `0x1367B24C8377F659124f22ABC00fb07e5835404b`, funded with 15 USDC from
+    that balance in the same broadcast (5 USDC kept with the owner as a
+    buffer — real testnet USDC is faucet-limited, not mintable like
+    `MockUSDC.mint()` was, so unlike `Deploy.s.sol` this script can't just
+    print more if it guesses funding wrong).
+  - Verified live, not just simulated: `pnpm live:day3-smoke` against the
+    new guard — cache miss → real `requestPayment` → real USDC `Transfer`
+    event (guard `14900000` → confirmed via `cast call balanceOf`, exactly
+    -100000 6dp; vendor payTo `+100000`) → cache hit, zero further
+    payment. Receipt `status: 1 (success)`, tx
+    `0xb334ead393257eda8250125487ba7859700b1f3ab3322b588e2dee648fbb565b`.
+    `pnpm lint && pnpm typecheck && pnpm build && pnpm test` (143 tests)
+    and `forge test` (56 tests) all still green — no application code
+    changed, only a new deploy script.
+  - `.env`'s `SPEND_GUARD_ADDRESS` updated locally to the new guard;
+    `README.md` and `coral-landing/index.html`'s "Deployed contracts"
+    links updated to point at it (old MockUSDC-backed deployment kept
+    live on-chain and linked as "superseded", not deleted — Sepolia state
+    is free and permanent either way).
+  - EC2 sync completed same day (see next entry) — `coral-http-server`
+    confirmed live against the new guard via a real public-gateway call
+    (see below). Not yet done: pushing the `coral-landing/index.html`/
+    `README.md` edits, which only exist locally so far.
+- **EC2 sync + a real, unrelated `coral-acp-provider` outage found and
+  fixed** (2026-09-06, same day): syncing `SPEND_GUARD_ADDRESS` to the
+  live box required SSH, which was blocked at the network level —
+  `curl https://3-216-178-169.nip.io/health` worked fine (box up, Caddy
+  fine) but port 22 timed out for both the user's own machine and this
+  session, from the same source IP. Root cause: the security group's
+  port-22 rule was scoped to a stale IP from initial setup, not the
+  user's current one (a static-IP change since then made this worse, not
+  better — the "static" IP wasn't the allowlisted one). Fixed by adding
+  the current IP's `/32` to the security group.
+  - Synced `SPEND_GUARD_ADDRESS` to `/etc/coral/coral.env` via a targeted
+    `sed` (never a full read of the secrets file, per `CLAUDE.md`),
+    restarted `coral-http-server` + `coral-acp-provider` (the only two
+    active services; `coral-ping-listener` stays inactive, unchanged —
+    Ping registration still not done). Verified `coral-http-server` live
+    against the real public gateway: a fresh test token correctly
+    produced a `pending_approval` outcome (the live gateway's real
+    $0.25 price exceeds the new guard's $0.15 humanApprovalThreshold, so
+    it escalated instead of auto-paying — exactly per policy, and
+    `requestId: 0` confirms this was the very first request against the
+    brand-new guard, not the old one).
+  - The `coral-acp-provider` restart surfaced a real, pre-existing,
+    unrelated outage: `Server error 500` from Privy's own signing
+    endpoint (`api.privy.io/v1/wallets/...`), 100% reproducible, at the
+    exact `signMessage` step `AcpApiClient.authenticate` calls before
+    every API request. The process had been running continuously since
+    Sep 4 and simply never needed to re-authenticate until this restart
+    forced it to — so the restart *exposed* the outage, it didn't cause
+    it.
+  - **Diagnosis, not guesswork**: (1) confirmed Privy's general API was
+    reachable and healthy (a plain unauthenticated request got a normal
+    `308`, not a `500`) and the box's clock was in sync — ruled out a
+    broad outage or a clock-skew signature issue. (2) Ran
+    `scripts/live-acp-buyer-test.ts` — a completely different wallet,
+    identical SDK code path — and its `signMessage`/`authenticate` call
+    succeeded cleanly (it got to `job.created` before hitting its own,
+    separate, unrelated `400` from Virtuals' `wallet_prepareCalls` AA
+    relay — a distinct open item, not investigated further here). That
+    isolated the failure to the provider wallet's specific credential,
+    not a systemic Privy/SDK problem. (3) Confirmed directly, without
+    ever exposing the private key value: derived the public key from the
+    deployed `ACP_SIGNER_PRIVATE_KEY` via `openssl pkey -pubout` inside a
+    single remote shell command that only ever returned a MATCH/NO-MATCH
+    boolean, and compared it against the public key shown on the
+    Virtuals dashboard's Signers tab — **NO MATCH**. The deployed key had
+    been silently superseded by a rotation on Privy/Virtuals' side at
+    some point after the last successful run; nothing in this repo's own
+    code or config drifted.
+  - Fixed: user regenerated the signer on the dashboard (scoped to
+    "Virtuals only" — the least-privilege option, since this wallet only
+    ever needs to sign Virtuals/ACP-related calls, matching the same
+    least-privilege posture `SpendGuard`'s allowlist already enforces
+    elsewhere in this project) and provided the new key. Deployed via the
+    same targeted-`sed`-into-`coral.env` pattern (never printed the key
+    value in full at any point, deployed or verified) to both the EC2 box
+    and the local `.env`. Restarted — clean success on the very first
+    attempt: `connected` → `serving offering "coral_cache" at 0.01 USDC`
+    → `ready, listening for jobs`, stable for 60+ seconds afterward with
+    zero further restarts (`systemctl reset-failed` cleared the ~670
+    accumulated failed-restart count from the outage window).
+  - Real, accepted process note: a Privy/Virtuals signer key is not
+    guaranteed stable across this deployment's lifetime — it can be
+    rotated on their side with no notification to this repo. Nothing to
+    fix in code for this; it's an operational fact to know about, not a
+    bug. Worth a line in `docs/LIMITATIONS.md`.
+- **Two cheap, zero-risk items closed the same day, ahead of the mainnet
+  work above** (2026-09-06/07), taken from an external rubric-literal
+  review of the submission's standing against other hackathon entries:
+  the review's own top priority was recording the required gate video
+  before spending more time on anything else, so these two were chosen
+  specifically because they don't touch or risk the demo path at all.
+  - **`test/decisionCore.invariant.test.ts`**: mechanically enforces the
+    non-negotiable "memory before payment" invariant the same way Cairn's
+    own deletion-gate suite enforces its analogous rule on `executor.py` —
+    reads `decisionCore.ts`'s real source (comments stripped, so a stray
+    mention in prose can't fool it), and asserts `memory.recallJob`
+    appears before `chain.requestPayment` in `handleJobQuery`'s body.
+    Cairn's version asserts certain names never appear at all, because its
+    replay path is a wholly separate function that should never import
+    payment/commons code; Coral's `handleJobQuery` legitimately calls both
+    in one function, so the right analog is source order, not absence.
+    Mutation-tested the same way this project already validates its own
+    order-checks: temporarily swapped the two calls' textual order,
+    confirmed the new test fails with a clear message, restored the
+    original file (diffed byte-identical after). Also asserts
+    `resumeAfterApproval` never re-requests a payment. 145 tests now (was
+    143).
+  - **`scripts/cache-savings-report.ts`** (`pnpm report:cache-savings`):
+    answers the "no quantified before/after story" gap the same review
+    named — a real script, not a mock, that reads back the COLD journal
+    via a new `SibylMemoryClient.searchJournal` helper
+    (`memory_search(tiers:"journal")`) and tallies cache hits vs. real
+    payments vs. blocked/pending into a dollar-estimate table using
+    Sibyl's one confirmed real price. Building it surfaced a real,
+    previously-undocumented API limit: `sibyl_memory_client`'s own
+    `search()` caps the journal tier at `floor(limit/4)` regardless of
+    what's requested — confirmed by reading its source, not assumed — so
+    a single call returns at most ~12 journal hits with no pagination in
+    this MCP interface. The script samples with several different exact-
+    match query terms rather than pretending one call is exhaustive, and
+    states that caveat plainly in its own printed output (matching this
+    project's own `docs/LIMITATIONS.md` honesty standard), rather than
+    implying a count it can't actually back up. Ran live against the real
+    local DB, not synthetic data: `pnpm report:cache-savings` correctly
+    reported the last `live:day3-smoke` run's 1 cache-hit + 1 real
+    payment (the local demo DB is wiped clean at the start of every
+    `live:*` script, so this is the true current state, not a bug).

@@ -194,11 +194,42 @@ for the verified SDK facts this was built against.
   here runs on Base Sepolia). A "paid"/"cache_hit" deliverable through
   this path is a real testnet payment resolved against a mock tier, not
   a real Sibyl evaluation, until this deployment moves to mainnet.
-- **Not yet exercised against a real ACP counterparty.** Verified live
-  only as far as `AcpAgent.create()` successfully authenticating against
-  Virtuals' real backend and reading back the agent's own registry entry
-  — no real buyer has funded a real job yet (needs a registered offering
-  and a counterparty agent, neither in place at time of writing).
+- **Exercised against a real buyer as far as job creation, blocked past
+  there by testnet token distribution, not a code bug.**
+  `scripts/live-acp-buyer-test.ts` (a separate buyer identity) authenticated
+  successfully and reached `hiring Coral ... for offering "coral_cache"`,
+  but the job-creation call itself hit a `400 Bad Request` from Virtuals'
+  own `wallet_prepareCalls` account-abstraction relay
+  (`api.acp.virtuals.io/wallets/alchemy-rpc`), reproducibly, every
+  attempt. Root-caused (2026-09-06), not left as a mystery: the buyer
+  wallet held `0` of the ACP-designated Base Sepolia USDC
+  (`0xECc22a8F6fD62388498fBa19813E214605a2BDb3`) — a faucet claim had
+  landed real Circle testnet USDC instead, a completely different token.
+  That ACP-designated token has only ~35 on-chain holders ever — it's a
+  limited/permissioned token Virtuals distributes manually, with no
+  public faucet found. **No real job has completed end-to-end on
+  testnet, and can't until Virtuals allocates that specific token to a
+  buyer wallet directly** (see `docs/API_NOTES.md`'s ACP buyer section).
+  Confirmed via the SDK's own `constants.js` that this is testnet-only:
+  Base mainnet uses ordinary real USDC for ACP funding, so this
+  particular blocker would not exist there.
+- **The provider wallet's Privy signer key is not guaranteed stable
+  across this deployment's lifetime.** Confirmed live 2026-09-06: Privy
+  rotated/regenerated the signing key for Coral's provider wallet at some
+  point after the last successful run (Sep 4) with no notification to
+  this repo — every `signMessage` call to `api.privy.io` started
+  returning a consistent `500`, taking the deployed `coral-acp-provider`
+  down until diagnosed (isolated via a second, independent wallet
+  authenticating successfully through the identical code path — ruling
+  out a systemic Privy/SDK problem — then confirmed directly by deriving
+  the deployed key's public counterpart via `openssl pkey -pubout` and
+  finding it didn't match the dashboard's current Signers-tab key) and
+  fixed by regenerating the signer (scoped to "Virtuals only") and
+  redeploying. Nothing in this repo caused or can prevent this — it's an
+  operational fact about depending on a third-party-managed signer, not a
+  bug. If `coral-acp-provider` ever goes down again with an identical
+  `Server error 500` at the same `signMessage` step, check this first
+  before assuming a code regression.
 - **In-memory-only job/pending-approval tracking**, same limitation as
   the Ping poll loop's cursor (see "General" below) — a process restart
   loses track of any job mid-flight between `job.funded` and `submit()`.

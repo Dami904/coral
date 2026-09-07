@@ -126,7 +126,8 @@ Both exercised live, both independently checkable on Basescan:
   Sepolia, real payments exercised live end-to-end:
   - Day 3 payment: [`0xc7047761a5ce321dca8ef37add4d708af1fc2b8e71e580b2c0d85b0a410afca2`](https://sepolia.basescan.org/tx/0xc7047761a5ce321dca8ef37add4d708af1fc2b8e71e580b2c0d85b0a410afca2)
   - Day 5 payment (full directTx flow): [`0x369508bea3fb14a11035b4f2b30d34ac7d355f1ae7cdb23261a2493f44c6e320`](https://sepolia.basescan.org/tx/0x369508bea3fb14a11035b4f2b30d34ac7d355f1ae7cdb23261a2493f44c6e320)
-  - Contract: [`SpendGuard`](https://sepolia.basescan.org/address/0xc243822863f1770a7187EbD630D150379e58EEdE) · [`MockUSDC`](https://sepolia.basescan.org/address/0xfC10f0A357c74318451A583C30A1fb5C8c7a2407)
+  - Contract (current, real Circle testnet USDC): [`SpendGuard`](https://sepolia.basescan.org/address/0x1367B24C8377F659124f22ABC00fb07e5835404b) · [`USDC`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e)
+  - Prior deployment (MockUSDC, superseded 2026-09-06): [`SpendGuard`](https://sepolia.basescan.org/address/0xc243822863f1770a7187EbD630D150379e58EEdE) · [`MockUSDC`](https://sepolia.basescan.org/address/0xfC10f0A357c74318451A583C30A1fb5C8c7a2407)
 
 ## Setup
 
