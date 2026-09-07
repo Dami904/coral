@@ -12,8 +12,8 @@
  */
 import { loadConfig } from "../src/config.js";
 import { handleJobQuery } from "../src/decisionCore.js";
-import { StubIntelligenceClient } from "../src/intelligence/stubIntelligenceClient.js";
-import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID } from "./lib/liveHarness.js";
+import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
+import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID, startMockX402Server } from "./lib/liveHarness.js";
 
 // Distinct fake contract addresses so each gets its own cache entry — a
 // real miss (payment) on first touch, a real hit (zero payment) on repeat.
@@ -27,7 +27,8 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const chain = makeChainClient(config);
   const memory = makeMemoryClient(config);
-  const intelligence = new StubIntelligenceClient();
+  const mockServer = await startMockX402Server();
+  const intelligence = new X402IntelligenceClient({ endpointUrl: mockServer.endpoint });
 
   const deps = {
     memory,
@@ -50,6 +51,7 @@ async function main(): Promise<void> {
 
   console.log(`[seed] done: ${TOKENS.length.toString()} tokens seeded, each with one real payment + one cache hit`);
   await memory.close();
+  await mockServer.close();
 }
 
 main().catch((err: unknown) => {

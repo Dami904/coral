@@ -9,6 +9,14 @@
  * possibly know about a prior call is the on-disk SQLite file, since
  * nothing else survives between invocations of a short-lived script.
  *
+ * Intelligence check points at the local mock x402 server, not the real
+ * https://sibylcap.com/api/evaluate — same as every other live:* script
+ * (live-day5-smoke.ts, live-http-server.ts) and for the same reason:
+ * SpendGuard here is deployed on Base Sepolia, and Sibyl's real endpoint
+ * only recognizes Base *mainnet* transactions. That's also why the output
+ * used to print "unknown-stub" — this was on StubIntelligenceClient, a
+ * Day-1 placeholder that never called anything real. See docs/API_NOTES.md.
+ *
  * Real (tiny) testnet payment on a cache miss — needs a funded agent
  * wallet, hence the live: prefix per CLAUDE.md.
  *
@@ -17,8 +25,8 @@
  */
 import { loadConfig } from "../src/config.js";
 import { handleJobQuery } from "../src/decisionCore.js";
-import { StubIntelligenceClient } from "../src/intelligence/stubIntelligenceClient.js";
-import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID } from "./lib/liveHarness.js";
+import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
+import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID, startMockX402Server } from "./lib/liveHarness.js";
 
 const DEFAULT_TOKEN = "0x000000000000000000000000000000d3410a11";
 
@@ -27,7 +35,8 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const chain = makeChainClient(config);
   const memory = makeMemoryClient(config);
-  const intelligence = new StubIntelligenceClient();
+  const mockServer = await startMockX402Server();
+  const intelligence = new X402IntelligenceClient({ endpointUrl: mockServer.endpoint });
 
   console.log(`[demo-query] pid ${process.pid.toString()}, fresh process, querying ${token}`);
   const result = await handleJobQuery(SIBYL_HIRED_AGENT_ID, token, {
@@ -42,6 +51,7 @@ async function main(): Promise<void> {
   console.log(result);
 
   await memory.close();
+  await mockServer.close();
 }
 
 main().catch((err: unknown) => {
