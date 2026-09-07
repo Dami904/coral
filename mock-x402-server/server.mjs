@@ -39,11 +39,40 @@ function challenge(res) {
   }));
 }
 
-function verdict(res, txHash) {
+const TIER_BUCKETS = [
+  { tier: "low_conviction", scoreMin: 0, scoreMax: 11 },
+  { tier: "medium_conviction", scoreMin: 12, scoreMax: 23 },
+  { tier: "high_conviction", scoreMin: 24, scoreMax: 30 },
+];
+
+/**
+ * Deterministic (same token always maps to the same tier — real caching
+ * behavior depends on that) but varied mock verdict, keyed off the token
+ * address itself. Before this, every token got the identical hardcoded
+ * "high_conviction"/24, which made a demo look staged (every query, real
+ * address or not, returning the exact same result). This is still
+ * disclosed MOCK data (see `mock: true` below and docs/LIMITATIONS.md) —
+ * varying it doesn't make it a real evaluation, just a more honest-looking
+ * *fake* one for a recording. Exported so tests can assert against it
+ * instead of hardcoding a value that would silently drift from this logic.
+ */
+export function tierForToken(token) {
+  const normalized = (token ?? "").toLowerCase();
+  let hash = 0;
+  for (let i = 0; i < normalized.length; i++) {
+    hash = (hash * 31 + normalized.charCodeAt(i)) >>> 0;
+  }
+  const bucket = TIER_BUCKETS[hash % TIER_BUCKETS.length];
+  const score = bucket.scoreMin + (hash % (bucket.scoreMax - bucket.scoreMin + 1));
+  return { tier: bucket.tier, conviction_score: score };
+}
+
+function verdict(res, txHash, token) {
+  const { tier, conviction_score } = tierForToken(token);
   res.writeHead(200, { "Content-Type": "application/json", "X-PAYMENT-RESPONSE": txHash });
   res.end(JSON.stringify({
-    conviction_score: 24,
-    tier: "high_conviction",
+    conviction_score,
+    tier,
     builder_conviction: { note: "MOCK data — not a real evaluation" },
     community_seed: {},
     onchain_proof: {},
@@ -59,6 +88,8 @@ export function requestHandler(req, res) {
   if (!req.url.startsWith("/api/evaluate")) {
     res.writeHead(404); res.end("not found"); return;
   }
+
+  const token = new URL(req.url, "http://localhost").searchParams.get("token");
 
   const txHash = req.headers["x-payment-tx"];
   if (!txHash) return challenge(res);
@@ -81,7 +112,7 @@ export function requestHandler(req, res) {
   // and dependency-free, but it means passing against this mock proves
   // your CLIENT logic works, not that on-chain settlement actually works.
   // Only the one real mainnet smoke test proves that.
-  verdict(res, txHash);
+  verdict(res, txHash, token);
 }
 
 // Only auto-listen when run directly (`node server.mjs` / `pnpm mock:x402`),

@@ -16,19 +16,25 @@
  * only recognizes Base *mainnet* transactions. That's also why the output
  * used to print "unknown-stub" — this was on StubIntelligenceClient, a
  * Day-1 placeholder that never called anything real. See docs/API_NOTES.md.
+ * The mock's verdict is deterministic per-token but still disclosed MOCK
+ * data (mock-x402-server/server.mjs's tierForToken) — not Sibyl's real
+ * evaluation of this address.
  *
  * Real (tiny) testnet payment on a cache miss — needs a funded agent
  * wallet, hence the live: prefix per CLAUDE.md.
  *
  * Run: pnpm live:demo-query [tokenAddress]
- *   (defaults to a fixed demo token if none given)
+ *   (defaults to real Base WETH's address if none given — a genuine,
+ *   recognizable contract, not a placeholder like 0x...dead)
  */
 import { loadConfig } from "../src/config.js";
 import { handleJobQuery } from "../src/decisionCore.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
 import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID, startMockX402Server } from "./lib/liveHarness.js";
 
-const DEFAULT_TOKEN = "0x000000000000000000000000000000d3410a11";
+// Base's canonical WETH predeploy — a real, well-known contract, not a
+// placeholder address, so the demo query looks like a genuine lookup.
+const DEFAULT_TOKEN = "0x4200000000000000000000000000000000000006";
 
 async function main(): Promise<void> {
   const token = process.argv[2] ?? DEFAULT_TOKEN;

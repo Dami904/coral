@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { requestHandler } from "../mock-x402-server/server.mjs";
+import { requestHandler, tierForToken } from "../mock-x402-server/server.mjs";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
 import { IntelligenceResultUnrecoverableError } from "../src/types.js";
 
@@ -25,13 +25,14 @@ afterAll(async () => {
 });
 
 describe("X402IntelligenceClient", () => {
-  it("relays the tx hash and token, and returns the tier", async () => {
+  it("relays the tx hash and token, and returns a tier deterministically keyed off the token", async () => {
     const client = new X402IntelligenceClient({ endpointUrl: baseUrl });
     const result = await client.invoke(CONTRACT, TX_A);
+    const expected = tierForToken(CONTRACT);
 
-    expect(result.output).toBe("high_conviction");
+    expect(result.output).toBe(expected.tier);
     expect(result.sourceEndpoint).toContain(`token=${CONTRACT}`);
-    expect(result.raw).toMatchObject({ verified_tx: TX_A, tier: "high_conviction" });
+    expect(result.raw).toMatchObject({ verified_tx: TX_A, tier: expected.tier, conviction_score: expected.conviction_score });
   });
 
   it("rejects a malformed tx hash the same way the server does (400)", async () => {

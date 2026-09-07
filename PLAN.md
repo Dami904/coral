@@ -884,3 +884,37 @@ Files: `contracts/SpendGuard.sol`, `contracts/MockUSDC.sol`,
     to break. Updated `test/acp/acpProvider.test.ts`'s two assertions to
     match. `pnpm test`: 145/145 still pass, `pnpm lint`/`pnpm typecheck`
     clean.
+- **Demo realism: real token addresses + varied mock tiers** (2026-09-07,
+  ahead of the actual recording). Two problems the user caught: (1) the
+  demo scripts queried obviously-fake placeholder addresses
+  (`0x...dead02`, `0x...a11`/`b22`/`c33`), which reads as staged; (2)
+  `mock-x402-server`'s `verdict()` returned the exact same hardcoded
+  `{conviction_score: 24, tier: "high_conviction"}` for every token
+  regardless of input, so even real addresses would all show an identical
+  result.
+  - Added `mock-x402-server/server.mjs`'s exported `tierForToken(token)`:
+    a deterministic (same address always maps to the same tier — real
+    caching behavior depends on that) hash over the token string, bucketed
+    into `low_conviction`/`medium_conviction`/`high_conviction` with a
+    score in that bucket's range. Still clearly disclosed MOCK data
+    (`mock: true` in the response, per `docs/LIMITATIONS.md`) — varying it
+    doesn't make it real, just a less obviously-staged fake for a
+    recording. `requestHandler` now parses `?token=` from the URL and
+    passes it through. `test/x402Client.test.ts` updated to assert against
+    `tierForToken(CONTRACT)`'s actual output instead of a hardcoded
+    "high_conviction", so the test can't silently drift from the logic it
+    exercises.
+  - `scripts/live-demo-query.ts`'s `DEFAULT_TOKEN` and
+    `scripts/live-seed-cache-demo.ts`'s `TOKENS` swapped to real,
+    verifiable Base contract addresses: WETH (`0x4200...0006`, Base's
+    canonical predeploy), cbBTC (`0xcbB7C000...ed33Bf`, Base mainnet,
+    confirmed via BaseScan this session), and Coral's own deployed
+    `SpendGuard` (`0x1367B24C...5835404b`) — the last one picked
+    specifically because it's a real, already-verified-this-session
+    address that happens to hash to `high_conviction`/30, giving all three
+    seeded tokens a visibly distinct tier (WETH → medium/16, SpendGuard →
+    high/30, cbBTC → low/9), confirmed via a local `tierForToken` check
+    before spending any real testnet gas re-running the seed script.
+  - `pnpm test`: 145/145 pass. `pnpm lint`/`pnpm typecheck` clean. Demo DB
+    (`.sibyl-memory-demo/memory.db`) reset afterward so the verification
+    queries above don't pollute the actual recording.

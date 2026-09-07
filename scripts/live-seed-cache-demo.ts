@@ -15,12 +15,16 @@ import { handleJobQuery } from "../src/decisionCore.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
 import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID, startMockX402Server } from "./lib/liveHarness.js";
 
-// Distinct fake contract addresses so each gets its own cache entry — a
-// real miss (payment) on first touch, a real hit (zero payment) on repeat.
+// Real, recognizable Base contract addresses (not placeholders like
+// 0x...a11) so each gets its own cache entry — a real miss (payment) on
+// first touch, a real hit (zero payment) on repeat. Picked so each also
+// lands on a different mock tier (mock-x402-server's tierForToken is
+// deterministically keyed off the address — verified live, not assumed),
+// so the demo shows all three tiers instead of the same result 3x.
 const TOKENS = [
-  "0x00000000000000000000000000000000000a11",
-  "0x00000000000000000000000000000000000b22",
-  "0x00000000000000000000000000000000000c33",
+  "0x4200000000000000000000000000000000000006", // WETH (Base predeploy) -> medium_conviction
+  "0x1367B24C8377F659124f22ABC00fb07e5835404b", // Coral's own deployed SpendGuard -> high_conviction
+  "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", // cbBTC (Base mainnet) -> low_conviction
 ];
 
 async function main(): Promise<void> {
