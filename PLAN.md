@@ -873,3 +873,14 @@ Files: `contracts/SpendGuard.sol`, `contracts/MockUSDC.sol`,
     only — ACP's `formatAcpDeliverable` (`src/acp/acpProvider.ts`) still
     says `tier` and was left alone; no request came in to touch it, and
     Virtuals-side buyers depend on that shape.
+  - **ACP wire field rename** (2026-09-07, follow-up request): renamed
+    `formatAcpDeliverable`'s field the same way, `tier` → `output`. Checked
+    first whether any real consumer depended on the old name —
+    `scripts/live-acp-buyer-test.ts` only logs the raw deliverable string,
+    never parses it, and no ACP buyer purchase against the live
+    `coral_cache` offering has ever actually completed (the buyer-side
+    `wallet_prepareCalls` 400 is still unresolved, see the ACP
+    buyer-funding entries above), so there was no live external dependency
+    to break. Updated `test/acp/acpProvider.test.ts`'s two assertions to
+    match. `pnpm test`: 145/145 still pass, `pnpm lint`/`pnpm typecheck`
+    clean.

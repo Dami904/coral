@@ -444,14 +444,15 @@ category is not a new pattern, just a new value.
 decision** to keep both `GET /check`'s JSON response and ACP's job
 deliverable saying `tier`, not `output`, since both `coral-landing`'s
 widget and any external ACP buyer already depended on that exact shape.
-**Since revised for the HTTP gateway** (2026-09-07, PLAN.md's "HTTP wire
-field rename" entry): `GET /check`/`GET /resume` now return `output`, not
-`tier` — `coral-landing/index.html`'s widget was updated in the same
-change, so nothing external is left depending on the old field name.
-**ACP's job deliverable (`src/acp/acpProvider.ts`'s
-`formatAcpDeliverable`) still says `tier`** — deliberately left alone,
-scoped separately, since Virtuals-side buyers depend on it and no request
-has come in to rename it.
+**Both wire points have since been renamed to `output`** (2026-09-07,
+PLAN.md's "HTTP wire field rename" and "ACP wire field rename" entries):
+`GET /check`/`GET /resume` first, `src/acp/acpProvider.ts`'s
+`formatAcpDeliverable` next. `coral-landing/index.html`'s widget was
+updated in the first change. No real ACP buyer has ever successfully
+completed a purchase against the live `coral_cache` offering (the buyer
+side's `wallet_prepareCalls` 400 — no ACP-designated testnet USDC — is
+still unresolved as of this writing), so there was no live external
+consumer of the old `tier` field to break.
 
 **Real, accepted consequence, confirmed live**: `hiredAgentId` (e.g.
 `sibyl-conviction-check`, centralized in `scripts/lib/liveHarness.ts`'s

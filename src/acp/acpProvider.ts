@@ -49,12 +49,13 @@ export function usdc6dpToDollars(amountUsdc6dp: bigint): number {
  * (see live-acp-provider.ts's handling of those instead).
  */
 export function formatAcpDeliverable(outcome: Extract<HandleOutcome, { outcome: "cache_hit" | "paid" }>): string {
-  // `outcome.output` is the core's generic field name; the deliverable
-  // itself keeps `tier` — this deployment's one real hired agent (Sibyl)
-  // really is a conviction tier, and there's no reason to break that
-  // wire-facing label just because the core underneath it generalized.
+  // Matches the HTTP gateway's own `output` field name (see
+  // src/http/httpGatewayServer.ts and docs/API_NOTES.md's "Generalizing
+  // the job cache" note) — this deployment's one real hired agent (Sibyl)
+  // happens to return a conviction tier, but the wire shape no longer
+  // hardcodes that framing.
   return JSON.stringify({
-    tier: outcome.output,
+    output: outcome.output,
     note: "Conviction tier, not a safety/scam verdict.",
   });
 }
