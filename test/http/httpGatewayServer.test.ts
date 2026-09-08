@@ -248,6 +248,53 @@ describe("GET /resume", () => {
   });
 });
 
+describe("GET /search", () => {
+  it("501s when the deployment has no searchSimilar wired up", async () => {
+    currentDeps = deps({});
+    const res = await fetch(`${baseUrl}/search?q=weth`);
+    expect(res.status).toBe(501);
+  });
+
+  it("400s when 'q' is missing", async () => {
+    currentDeps = deps({ searchSimilar: async () => [] });
+    const res = await fetch(`${baseUrl}/search`);
+    expect(res.status).toBe(400);
+  });
+
+  it("200s with mapped results and never calls the payment/cache path", async () => {
+    let calledWith: [string, number | undefined] | null = null;
+    currentDeps = deps({
+      searchSimilar: async (query, limit) => {
+        calledWith = [query, limit];
+        return [
+          { category: HIRED_AGENT_ID, name: CONTRACT, output: "high_conviction", checkedAt: "2026-08-26T12:00:00.000Z", snippet: "...", rank: -0.001 },
+        ];
+      },
+    });
+    const res = await fetch(`${baseUrl}/search?q=weth&limit=3`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { query: string; count: number; results: unknown[] };
+    expect(body.query).toBe("weth");
+    expect(body.count).toBe(1);
+    expect(body.results).toHaveLength(1);
+    expect(calledWith).toEqual(["weth", 3]);
+  });
+
+  it("caps limit at 50 and defaults to 10 when omitted or invalid", async () => {
+    let seenLimit: number | undefined;
+    currentDeps = deps({
+      searchSimilar: async (_query, limit) => {
+        seenLimit = limit;
+        return [];
+      },
+    });
+    await fetch(`${baseUrl}/search?q=weth&limit=9999`);
+    expect(seenLimit).toBe(50);
+    await fetch(`${baseUrl}/search?q=weth`);
+    expect(seenLimit).toBe(10);
+  });
+});
+
 describe("unhandled routes and methods", () => {
   it("404s an unknown path", async () => {
     currentDeps = deps({});
@@ -276,6 +323,18 @@ describe("unexpected failures", () => {
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
     expect(body.error).not.toContain("db exploded");
+  });
+
+  it("also 500s /search cleanly when searchSimilar throws, via the same shared catch", async () => {
+    currentDeps = deps({
+      searchSimilar: async () => {
+        throw new Error("memory tool rejected: bad fts5 query");
+      },
+    });
+    const res = await fetch(`${baseUrl}/search?q=weth`);
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).not.toContain("fts5");
   });
 });
 

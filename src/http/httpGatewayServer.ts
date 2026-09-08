@@ -1,6 +1,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
 import { handleJobQuery, resumeAfterApproval, type HandleTokenQueryDeps } from "../decisionCore.js";
 import { createKeyedLock } from "../lib/keyedLock.js";
+import type { SimilarJobHit } from "../memory/sibylMemoryClient.js";
 import type { HiredAgentId, ResumableChainPort } from "../types.js";
 
 const CONTRACT_RE = /^0x[a-fA-F0-9]{40}$/;
@@ -32,6 +33,15 @@ export type HttpGatewayDeps = HandleTokenQueryDeps & {
    * SIBYL_HIRED_AGENT_ID), but the core no longer assumes that's the only
    * possible value. */
   hiredAgentId: HiredAgentId;
+  /**
+   * Powers GET /search. Deliberately typed as a plain function, not the
+   * concrete SibylMemoryClient — this route is read-only, non-authoritative
+   * (never a cache-hit decision, never wired into handleJobQuery) and kept
+   * out of MemoryPort entirely so nothing about the payment-gating path can
+   * depend on it. Omit to have /search return 501 (e.g. in tests that don't
+   * exercise it).
+   */
+  searchSimilar?: (query: string, limit?: number) => Promise<SimilarJobHit[]>;
 };
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -127,6 +137,34 @@ async function handleResume(
   }
 }
 
+/**
+ * Non-authoritative suggestions from a full-text search over Coral's own
+ * job cache — e.g. a query by name/ticker instead of the exact contract
+ * address /check requires. Never a cache hit, never affects payment: see
+ * HttpGatewayDeps.searchSimilar and docs/API_NOTES.md.
+ */
+async function handleSearch(req: IncomingMessage, res: ServerResponse, deps: HttpGatewayDeps): Promise<void> {
+  if (!deps.searchSimilar) {
+    sendJson(res, 501, { error: "search is not enabled on this deployment" });
+    return;
+  }
+  const query = readQuery(req).get("q")?.trim();
+  if (!query) {
+    sendJson(res, 400, { error: "query param 'q' is required" });
+    return;
+  }
+  const limitRaw = readQuery(req).get("limit");
+  const limit = limitRaw && /^\d+$/.test(limitRaw) ? Math.min(Number(limitRaw), 50) : 10;
+
+  const results = await deps.searchSimilar(query, limit);
+  sendJson(res, 200, {
+    query,
+    count: results.length,
+    results,
+    note: "Suggestions from a full-text search over past lookups, not an exact-match cache hit — never affects payment.",
+  });
+}
+
 export function createHttpGatewayListener(deps: HttpGatewayDeps): RequestListener {
   const withContractLock = createKeyedLock();
   return (req, res) => {
@@ -149,7 +187,14 @@ export function createHttpGatewayListener(deps: HttpGatewayDeps): RequestListene
           await handleResume(req, res, deps, withContractLock);
           return;
         }
-        sendJson(res, 404, { error: "not found", routes: ["GET /check?token=0x...", "GET /resume?contract=&requestId=&fromBlock=", "GET /health"] });
+        if (path === "/search") {
+          await handleSearch(req, res, deps);
+          return;
+        }
+        sendJson(res, 404, {
+          error: "not found",
+          routes: ["GET /check?token=0x...", "GET /resume?contract=&requestId=&fromBlock=", "GET /search?q=...", "GET /health"],
+        });
       } catch (err) {
         // IntelligenceCheckFailedAfterPaymentError/CacheWriteFailedAfterPaymentError
         // (docs/API_NOTES.md's "dangerous ordering" note) carry the exact

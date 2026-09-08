@@ -27,6 +27,19 @@ export type JournalHit = {
   ts: string;
 };
 
+/** One `memory_search(tiers:"entity")` hit against Coral's own job cache —
+ * confirmed live 2026-09-08 by writing a probe entity and searching for it
+ * (not guessed from the journal-tier shape above, which is different):
+ * `body` is the stored JobRecord as-is, not a decoded multi-field wrapper. */
+export type SimilarJobHit = {
+  category: string | null;
+  name: string | null;
+  output: string | null;
+  checkedAt: string | null;
+  snippet: string;
+  rank: number;
+};
+
 export type SibylMemoryClientConfig = {
   /** Defaults to "sibyl-memory-mcp" — must be on PATH (pip install sibyl-memory-mcp). */
   command?: string;
@@ -389,6 +402,48 @@ export class SibylMemoryClient implements MemoryPort {
     }
     const payload = result.parsed as { results?: unknown };
     return Array.isArray(payload.results) ? (payload.results as JournalHit[]) : [];
+  }
+
+  /**
+   * One-off, read-only "similar things we've already checked" lookup —
+   * deliberately NOT part of MemoryPort and never called from
+   * decisionCore.ts. recallJob's exact-(category,name)-match stays the
+   * only thing that decides a cache hit vs. a real payment; this exists
+   * purely to surface non-authoritative suggestions (e.g. from a query
+   * that isn't an exact contract address) via GET /search. See
+   * docs/API_NOTES.md.
+   *
+   * Passes `tiers: "entity"` explicitly rather than omitting it: the
+   * omitted-tiers path runs multi_record_search(), which — per the live
+   * tool description — abstains (`count: 0`) the moment one query token
+   * is content-shaped with zero corpus support, which would make an
+   * ordinary partial-name search return nothing even when an exact
+   * substring match exists. tiers:"entity" calls client.search() directly
+   * and doesn't carry that gate.
+   */
+  async searchSimilar(query: string, limit = 10): Promise<SimilarJobHit[]> {
+    const result = await this.callTool(
+      "memory_search",
+      { query, limit, tiers: "entity" },
+      { retryTransportFailures: true },
+    );
+    if (result.isError) {
+      throw new MemoryToolRejectedError("memory_search", result.parsed);
+    }
+    const payload = result.parsed as { results?: unknown };
+    const raw = Array.isArray(payload.results) ? payload.results : [];
+    return raw.map((hit): SimilarJobHit => {
+      const h = hit as { key?: unknown; category?: unknown; body?: unknown; snippet?: unknown; rank?: unknown };
+      const body = h.body as Partial<JobRecord> | undefined;
+      return {
+        category: typeof h.category === "string" ? h.category : null,
+        name: typeof h.key === "string" ? h.key : null,
+        output: typeof body?.output === "string" ? body.output : null,
+        checkedAt: typeof body?.checked_at === "string" ? body.checked_at : null,
+        snippet: typeof h.snippet === "string" ? h.snippet : "",
+        rank: typeof h.rank === "number" ? h.rank : 0,
+      };
+    });
   }
 
   async clearPendingEscalation(hiredAgentId: HiredAgentId, input: string): Promise<void> {

@@ -53,11 +53,12 @@ async function main() {
       priceUsdc6dp: PRICE_USDC_6DP,
       staleWindowMs: 60 * 60 * 1000,
       hiredAgentId: SIBYL_HIRED_AGENT_ID,
+      searchSimilar: (query, limit) => memory.searchSimilar(query, limit),
     }),
   );
 
   await new Promise<void>((resolve) => server.listen(PORT, resolve));
-  console.log(`[http-server] listening on http://127.0.0.1:${PORT.toString()} (GET /check?token=, GET /resume, GET /health)`);
+  console.log(`[http-server] listening on http://127.0.0.1:${PORT.toString()} (GET /check?token=, GET /resume, GET /search?q=, GET /health)`);
 
   const shutdown = () => {
     console.log("[http-server] shutting down...");

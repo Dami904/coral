@@ -467,6 +467,43 @@ real payment → cache hit → delete → real payment again, all still work
 correctly under the new category scheme — confirmed live, not just by
 the type checker passing.
 
+### `GET /search` — non-authoritative memory_search lookup (2026-09-08)
+
+Added `SibylMemoryClient.searchSimilar(query, limit?)` and a new
+`GET /search?q=&limit=` route on the HTTP gateway, for querying the job
+cache by something other than the exact contract address `/check`
+requires (a name, ticker, or any text that was ever cached).
+
+**Deliberately kept outside the payment-gating path.** `searchSimilar` is
+not on `MemoryPort` and is never called from `decisionCore.ts` —
+`handleJobQuery`'s cache-hit-vs-pay decision still only ever uses
+`recallJob`'s exact `(category, name)` match. `HttpGatewayDeps.searchSimilar`
+is an optional plain function, not the concrete `SibylMemoryClient`, so a
+deployment that omits it just gets `501` on `/search`; every existing
+`/check`/`/resume` behavior, test, and invariant is untouched.
+
+**Entity-tier hit shape confirmed live, not assumed** (2026-09-08): wrote
+a probe entity via `memory_remember`, then called
+`memory_search(query, tiers:"entity")` for it. Real response:
+```json
+{"tier":"entity","key":"weth-test-token","category":"coral_scope_probe",
+ "body":{"hiredAgentId":"...","output":"high_conviction", ...},
+ "snippet":"...","rank":-0.000004375,"ts":"..."}
+```
+`body` is the stored `JobRecord` as-is — a different shape from the
+journal-tier `JournalHit` above (`{evaluated, acted, forward, extra}`),
+so `searchSimilar`'s mapper reads `body.output`/`body.checked_at`
+directly rather than reusing `JournalHit`'s decode logic.
+
+**`tiers:"entity"` is passed explicitly, not omitted.** Per the live tool
+description for `memory_search`: omitting `tiers` runs
+`multi_record_search()`, which abstains (`count:0`) the moment one query
+token is content-shaped with zero corpus support anywhere — a precision
+gate meant for cross-tier queries, not Coral's case of "search this one
+cache." `tiers:"entity"` calls `client.search()` directly and skips that
+gate, so an ordinary partial-name query reliably finds an exact substring
+match instead of sometimes silently returning nothing.
+
 ## ACP buyer side (verified 2026-09-04)
 
 Researched before writing `scripts/live-acp-buyer-test.ts`, same standard

@@ -918,3 +918,36 @@ Files: `contracts/SpendGuard.sol`, `contracts/MockUSDC.sol`,
   - `pnpm test`: 145/145 pass. `pnpm lint`/`pnpm typecheck` clean. Demo DB
     (`.sibyl-memory-demo/memory.db`) reset afterward so the verification
     queries above don't pollute the actual recording.
+
+- **Added a second, non-authoritative lookup mode: `GET /search`**
+  (2026-09-08). Every existing lookup (`recallJob`, and `/check`) is exact
+  `(category, name)` match on a contract address — correct for a payment
+  gate, since a fuzzy match could serve a stale/wrong verdict for a
+  token that merely resembles a previously-paid one. But it means there
+  was no way to find anything cached without already knowing the exact
+  CA. Scoped explicitly to avoid touching the payment-gating path at all:
+  - `SibylMemoryClient.searchSimilar(query, limit?)` — new method, not on
+    `MemoryPort`, calling `memory_search(tiers:"entity")`. Verified the
+    entity-tier hit shape live (not assumed) by writing a probe entity via
+    `memory_remember` and searching for it, then archiving the probe with
+    `memory_forget` — see `docs/API_NOTES.md`'s new "`GET /search`" entry
+    for the confirmed response shape and why `tiers:"entity"` is passed
+    explicitly rather than omitted (the omitted-tiers path abstains on an
+    ordinary partial-name query in a way `tiers:"entity"` doesn't).
+  - `HttpGatewayDeps.searchSimilar` — optional plain function, not the
+    concrete client class, so `decisionCore.ts`/`MemoryPort` gain no new
+    surface and a deployment can omit it (`/search` then 501s) without
+    affecting `/check`/`/resume`.
+  - New `GET /search?q=&limit=` route in `src/http/httpGatewayServer.ts`,
+    wired in `scripts/live-http-server.ts`. Response is explicitly labeled
+    "suggestions only ... never affects payment."
+  - Tests added: `searchSimilar` mapping/error/retry cases in
+    `test/memory/sibylMemoryClient.test.ts`, and `/search` route cases
+    (501 unwired, 400 missing `q`, 200 mapped results, limit clamping) in
+    `test/http/httpGatewayServer.test.ts`. `pnpm lint`/`typecheck`/`build`
+    clean; `pnpm test`: 153/153 pass (a 2-test flake in
+    `spendGuardClient.test.ts` under full-suite parallel load — a
+    real-timer retry test hitting its 5s timeout under CPU contention —
+    reproduced and confirmed pre-existing/unrelated by re-running against
+    a clean stash of this change, and not reproducible in isolation or on
+    a clean re-run).

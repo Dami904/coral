@@ -273,6 +273,65 @@ describe("SibylMemoryClient", () => {
     });
   });
 
+  describe("searchSimilar", () => {
+    it("maps entity-tier hits, passing tiers:'entity' explicitly", async () => {
+      callToolMock.mockResolvedValueOnce(
+        textResult({
+          ok: true,
+          query: "weth",
+          count: 1,
+          results: [
+            {
+              tier: "entity",
+              key: CONTRACT,
+              category: HIRED_AGENT_ID,
+              body: RECORD,
+              snippet: "...high_conviction...",
+              rank: -0.001,
+              ts: "2026-09-08T10:52:28.062Z",
+            },
+          ],
+        }),
+      );
+      const client = new SibylMemoryClient();
+      const results = await client.searchSimilar("weth", 5);
+      expect(results).toEqual([
+        {
+          category: HIRED_AGENT_ID,
+          name: CONTRACT,
+          output: "high_conviction",
+          checkedAt: "2026-08-26T12:00:00.000Z",
+          snippet: "...high_conviction...",
+          rank: -0.001,
+        },
+      ]);
+      expect(callToolMock).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "memory_search", arguments: { query: "weth", limit: 5, tiers: "entity" } }),
+      );
+    });
+
+    it("returns an empty array when there are no results", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ ok: true, query: "nothing", count: 0, results: [] }));
+      const client = new SibylMemoryClient();
+      await expect(client.searchSimilar("nothing")).resolves.toEqual([]);
+    });
+
+    it("throws MemoryToolRejectedError on a rejection", async () => {
+      callToolMock.mockResolvedValueOnce(textResult({ code: "VALIDATION_ERROR" }, true));
+      const client = new SibylMemoryClient();
+      await expect(client.searchSimilar("bad")).rejects.toBeInstanceOf(MemoryToolRejectedError);
+    });
+
+    it("retries a transport-level failure", async () => {
+      callToolMock
+        .mockRejectedValueOnce(new Error("stdio pipe closed"))
+        .mockResolvedValueOnce(textResult({ ok: true, query: "weth", count: 0, results: [] }));
+      const client = new SibylMemoryClient();
+      await expect(client.searchSimilar("weth")).resolves.toEqual([]);
+      expect(callToolMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe("clearPendingEscalation", () => {
     it("clears successfully on the first attempt", async () => {
       callToolMock.mockResolvedValueOnce(textResult({ ok: true, archived: { category: "pending_escalation", name: CONTRACT } }));
