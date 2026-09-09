@@ -395,6 +395,7 @@
       <a href="#proof">Proof</a>
       <a href="#honesty">What's real</a>
       <a href="#stack">Stack</a>
+      <a href="docs.html">Docs</a>
       <a class="cta" href="https://github.com/Dami904/coral" target="_blank" rel="noopener">View repo</a>
     </nav>
   </div>
@@ -415,9 +416,9 @@
         <a class="btn ghost" href="#proof">See the real transactions</a>
       </div>
       <div class="hero-facts">
-        <span><b>Base Sepolia</b> &middot; SpendGuard deployed and paying live</span>
+        <span><b>Base mainnet + Sepolia</b> &middot; SpendGuard deployed and paying live on both</span>
         <span><b>4</b> fixed-order on-chain policy rules</span>
-        <span><b>129</b> tests passing, zero mocked chain calls</span>
+        <span><b>155</b> tests passing, zero mocked chain calls</span>
       </div>
     </div>
   </section>
@@ -589,7 +590,7 @@
       <div class="section-head" data-reveal>
         <span class="eyebrow">Proof, not a pitch</span>
         <h2 class="kicker">Every claim above resolves to something checkable.</h2>
-        <p class="prose" style="color:var(--muted); margin:0;">The output below is real, captured from this repo's own test suite. The links are real Base Sepolia transactions.</p>
+        <p class="prose" style="color:var(--muted); margin:0;">The output below is real, captured from this repo's own test suite. The links are real transactions &mdash; both Base mainnet and Base Sepolia.</p>
       </div>
       <div class="proof-grid" data-reveal>
         <div class="terminal">
@@ -597,8 +598,8 @@
           <div class="body">
             <div class="cmd-line"><span class="prompt">~/coral</span><span class="cmd">pnpm test</span></div>
             <span class="fade">RUN v4.1.11</span>
-            <div class="row"><span class="k">Test Files</span><span class="v">10 passed (10)</span></div>
-            <div class="row"><span class="k">Tests</span><span class="v">129 passed (129)</span></div>
+            <div class="row"><span class="k">Test Files</span><span class="v">13 passed (13)</span></div>
+            <div class="row"><span class="k">Tests</span><span class="v">155 passed (155)</span></div>
 
             <div class="cmd-line"><span class="prompt">~/coral</span><span class="cmd">forge test</span></div>
             <span class="fade">Ran 2 test suites</span>
@@ -609,7 +610,18 @@
         </div>
         <div class="tx-list">
           <div class="tx-card">
-            <div class="k">Real payments, decoded from the mined receipt</div>
+            <div class="k">Real mainnet payments (Base)</div>
+            <a href="https://basescan.org/tx/0xe70d3765e7955850cd22c22345a5e877f358d5776eaff0880ec65bac985ead8b" target="_blank" rel="noopener">
+              <span class="mono">0xe70d376&hellip;985ead8b</span>
+              <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 12L12 4M12 4H6M12 4V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
+            <a href="https://basescan.org/tx/0x0f8c8ce6bc987275e9d320dfdb7b66f7d2e24fd629890824fc8939172c5b02d6" target="_blank" rel="noopener">
+              <span class="mono">0x0f8c8ce&hellip;72c5b02d6</span>
+              <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 12L12 4M12 4H6M12 4V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
+          </div>
+          <div class="tx-card">
+            <div class="k">Real testnet payments (Base Sepolia)</div>
             <a href="https://sepolia.basescan.org/tx/0xc7047761a5ce321dca8ef37add4d708af1fc2b8e71e580b2c0d85b0a410afca2" target="_blank" rel="noopener">
               <span class="mono">0xc704776&hellip;10afca2</span>
               <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 12L12 4M12 4H6M12 4V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -621,17 +633,17 @@
           </div>
           <div class="tx-card">
             <div class="k">Deployed contracts</div>
-            <a href="https://sepolia.basescan.org/address/0x1367B24C8377F659124f22ABC00fb07e5835404b" target="_blank" rel="noopener">
-              <span class="mono">SpendGuard</span>
+            <a href="https://basescan.org/address/0xfC10f0A357c74318451A583C30A1fb5C8c7a2407" target="_blank" rel="noopener">
+              <span class="mono">SpendGuard (mainnet)</span>
               <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 12L12 4M12 4H6M12 4V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </a>
-            <a href="https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e" target="_blank" rel="noopener">
-              <span class="mono">USDC</span>
+            <a href="https://sepolia.basescan.org/address/0x1367B24C8377F659124f22ABC00fb07e5835404b" target="_blank" rel="noopener">
+              <span class="mono">SpendGuard (Sepolia)</span>
               <svg class="icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 12L12 4M12 4H6M12 4V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </a>
           </div>
           <div class="proof-note">
-            The invariant is enforced by <code>test/decisionCore.test.ts</code>: "checks memory before ever calling the chain." Delete <code>SIBYL_MEMORY_DB</code> and the next lookup for a previously-cached contract is provably a cache miss again, proven live via <code>pnpm live:deletion-test</code> against the contract above.
+            The invariant is enforced by <code>test/decisionCore.test.ts</code>: "checks memory before ever calling the chain." Delete <code>SIBYL_MEMORY_DB</code> and the next lookup for a previously-cached contract is provably a cache miss again, proven live via <code>pnpm live:deletion-test</code> against the contract above. Full transaction history, architecture, and every test: <a href="docs.html" style="color:var(--reef-deep);">technical docs</a>.
           </div>
         </div>
       </div>
@@ -661,12 +673,17 @@
             <tr>
               <td>SpendGuard</td>
               <td><span class="status live"><svg class="icon" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Live</span></td>
-              <td>Deployed to Base Sepolia. Timelocked policy changes, fixed-capacity ring buffers, two-step ownership: production-hardened, not a demo contract.</td>
+              <td>Deployed to both Base mainnet and Base Sepolia. Timelocked policy changes, fixed-capacity ring buffers, two-step ownership: production-hardened, not a demo contract.</td>
             </tr>
             <tr>
               <td>x402 payment</td>
               <td><span class="status live"><svg class="icon" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Live</span></td>
-              <td>Real directTx / <code>X-PAYMENT-TX</code> flow exercised against a local mock server. The real mainnet endpoint has been probed live but not yet paid.</td>
+              <td>Real directTx / <code>X-PAYMENT-TX</code> flow, exercised both against a local mock server and Sibyl's real production endpoint on mainnet &mdash; real USDC paid, real conviction data returned.</td>
+            </tr>
+            <tr>
+              <td>Coral on Virtuals ACP</td>
+              <td><span class="status live"><svg class="icon" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Live</span></td>
+              <td>Listed and hireable on Virtuals' marketplace. One full real job completed end-to-end on mainnet: funded, paid, delivered.</td>
             </tr>
             <tr>
               <td>Ping messaging</td>
@@ -675,13 +692,13 @@
             </tr>
             <tr>
               <td>Base mainnet</td>
-              <td><span class="status staged"><svg class="icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v3l2 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Staged</span></td>
-              <td>Deploy script written and dry-run against a local fork. Not broadcast: real funds, held for a deliberate go-ahead.</td>
+              <td><span class="status live"><svg class="icon" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Live</span></td>
+              <td>Deployed, verified on Basescan, funded, and paying out real USDC through a real, on-chain-executed policy.</td>
             </tr>
             <tr>
               <td>Gateway mode <span style="color:var(--muted); font-weight:400;">(paid, via Ping)</span></td>
               <td><span class="status staged"><svg class="icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 5v3l2 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Staged</span></td>
-              <td>Not the free HTTP check above — this is the mirror case where <em>another agent pays Coral</em> over Ping. Payment verification and the replay ledger are unit-tested against decoded receipts. Not yet exercised against a real paying counterparty.</td>
+              <td>Not the free HTTP check above &mdash; this is the mirror case where <em>another agent pays Coral</em> over Ping. Payment verification and the replay ledger are unit-tested against decoded receipts. Not yet exercised against a real paying counterparty.</td>
             </tr>
           </tbody>
         </table>

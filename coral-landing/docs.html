@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Coral Docs</title>
+<meta name="description" content="Coral's full technical reference: architecture, every real testnet and mainnet transaction, exhaustive test coverage, and an honest trust model." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #FFFFFF;
+    --surface: #F7F9FA;
+    --ink: #0B1214;
+    --muted: #6B7677;
+    --line: #E7EAEB;
+    --reef: #0B79A6;
+    --reef-deep: #075A7D;
+    --reef-soft: #EAF5F9;
+    --good: #1A8A5F;
+    --wait: #B9770E;
+  }
+  * , *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+    font-size: 15.5px; line-height: 1.68; -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4 { font-family: "IBM Plex Mono", ui-monospace, monospace; text-wrap: balance; letter-spacing: -0.01em; margin: 0; font-weight: 600; color: var(--ink); }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; font-variant-numeric: tabular-nums; }
+  a { color: var(--reef-deep); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, summary:focus-visible, button:focus-visible { outline: 2px solid var(--reef); outline-offset: 2px; border-radius: 3px; }
+  p { margin: 0 0 1em; font-family: "Instrument Sans", sans-serif; }
+  p:last-child { margin-bottom: 0; }
+  ul, ol { margin: 0 0 1em; padding-left: 1.3em; font-family: "Instrument Sans", sans-serif; }
+  li + li { margin-top: 0.4em; }
+  button { font-family: inherit; }
+
+  code:not(pre code) {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+    padding: 0.12em 0.4em; font-size: 0.87em; color: var(--reef-deep);
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    height: 58px; border-bottom: 1px solid var(--line); display: flex; align-items: center;
+    justify-content: space-between; padding: 0 20px; position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: baseline; gap: 9px; }
+  .brand .word { font-family: "IBM Plex Mono", monospace; font-weight: 700; font-size: 15px; letter-spacing: 0.02em; color: var(--ink); }
+  .brand .sub { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--muted); }
+  .top-actions { display: flex; align-items: center; gap: 10px; }
+  .search-btn {
+    display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 10px 7px 12px; color: var(--muted); font-size: 13px; cursor: pointer;
+  }
+  .search-btn:hover { border-color: var(--reef); color: var(--ink); }
+  .search-btn kbd { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+  .launch-btn {
+    background: var(--ink); color: #fff; border: none; border-radius: 8px; padding: 9px 15px;
+    font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .launch-btn:hover { background: var(--reef-deep); }
+  .menu-toggle {
+    display: none; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper);
+    align-items: center; justify-content: center; cursor: pointer;
+  }
+
+  /* ---------- shell ---------- */
+  .shell { display: flex; max-width: 1400px; margin: 0 auto; }
+  .sidebar {
+    flex: none; width: 240px; padding: 26px 16px 60px; position: sticky; top: 58px; height: calc(100vh - 58px);
+    overflow-y: auto; border-right: 1px solid var(--line);
+  }
+  .nav-group { margin-bottom: 22px; }
+  .nav-group h5 { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: 0.09em; color: var(--muted); font-weight: 600; padding: 0 10px 8px; }
+  .nav-group a {
+    display: block; color: var(--ink); font-size: 13.5px; padding: 7px 10px; border-radius: 7px; margin-bottom: 1px;
+    border-left: 2px solid transparent;
+  }
+  .nav-group a:hover { background: var(--surface); text-decoration: none; }
+  .nav-group a.active { color: var(--reef-deep); font-weight: 600; background: var(--reef-soft); border-left-color: var(--reef); }
+
+  main.content { flex: 1; min-width: 0; padding: 40px clamp(20px, 4vw, 56px) 100px; max-width: 780px; }
+  .toc-right {
+    flex: none; width: 210px; padding: 40px 20px 60px 0; position: sticky; top: 58px; height: calc(100vh - 58px); overflow-y: auto;
+  }
+  .toc-right h5 { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: 0.09em; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+  .toc-right a { display: block; font-size: 12.5px; color: var(--muted); padding: 5px 0 5px 12px; border-left: 2px solid var(--line); }
+  .toc-right a:hover { color: var(--ink); text-decoration: none; }
+  .toc-right a.active { color: var(--reef-deep); border-left-color: var(--reef); font-weight: 500; }
+  @media (max-width: 1180px) { .toc-right { display: none; } }
+  @media (max-width: 860px) {
+    .sidebar { position: fixed; left: -260px; top: 58px; height: calc(100vh - 58px); background: var(--paper); z-index: 45; transition: left 0.2s ease; box-shadow: 0 10px 28px -16px rgba(10,20,24,0.2); }
+    .sidebar.open { left: 0; }
+    .menu-toggle { display: flex; }
+    main.content { max-width: none; }
+  }
+
+  .crumb { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 14px; text-transform: uppercase; }
+  .crumb b { color: var(--reef-deep); }
+  .page-title { font-size: 30px; margin-bottom: 10px; }
+  .page-sub { font-family: "Instrument Sans", sans-serif; font-size: 16px; color: var(--muted); margin-bottom: 22px; }
+  /* Same wave-divider used on the landing page (coral-landing/index.html) */
+  .wave-divider { line-height: 0; margin: 6px 0 22px; overflow: hidden; }
+  .wave-breathe { animation: wave-breathe 7s ease-in-out infinite alternate; }
+  .wave-divider svg { width: 200%; height: 32px; display: block; animation: wave-scroll 18s linear infinite; }
+  .wave-divider .back { fill: var(--reef); opacity: 0.16; }
+  .wave-divider .front { fill: var(--reef-soft); }
+  @keyframes wave-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @keyframes wave-breathe { from { transform: translateY(0); } to { transform: translateY(5px); } }
+  @media (prefers-reduced-motion: reduce) { .wave-divider svg, .wave-breathe { animation: none; } }
+
+  .page-body h2 { font-size: 19px; margin: 32px 0 12px; scroll-margin-top: 74px; }
+  .page-body h2:first-child { margin-top: 0; }
+  .page-body h3 { font-size: 15px; margin: 22px 0 8px; scroll-margin-top: 74px; }
+  .subtle { color: var(--muted); }
+
+  .pill-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 22px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; font-weight: 500; padding: 4px 9px; border-radius: 20px;
+    border: 1px solid var(--line); color: var(--muted); background: var(--surface);
+  }
+  .pill.live { color: var(--good); border-color: color-mix(in srgb, var(--good) 30%, var(--line)); }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; }
+
+  /* tables */
+  .table-wrap { overflow-x: auto; margin: 14px 0 18px; border: 1px solid var(--line); border-radius: 10px; }
+  table.d { width: 100%; border-collapse: collapse; font-size: 13.3px; min-width: 460px; font-family: "Instrument Sans", sans-serif; }
+  table.d th {
+    text-align: left; font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 10.5px; letter-spacing: 0.03em; text-transform: uppercase;
+    color: var(--muted); padding: 10px 14px; background: var(--surface); border-bottom: 1px solid var(--line); white-space: nowrap;
+  }
+  table.d td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.d tr:last-child td { border-bottom: none; }
+  table.d td.mono { font-family: "IBM Plex Mono", monospace; font-size: 12.3px; word-break: break-all; }
+  table.d td.num { font-family: "IBM Plex Mono", monospace; text-align: right; white-space: nowrap; }
+  .status { display: inline-flex; align-items: center; gap: 5px; font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .status.live { color: var(--good); } .status.staged { color: var(--wait); }
+  .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  pre.code {
+    background: #0B1418; color: #C6D8DB; border-radius: 10px; padding: 14px 16px;
+    overflow-x: auto; font-family: "IBM Plex Mono", monospace; font-size: 12.3px; line-height: 1.6; margin: 14px 0;
+  }
+  pre.code .c { color: #56696E; } pre.code .g { color: #4ED19A; }
+
+  .box { border: 1px solid var(--line); border-radius: 10px; padding: 15px 18px; margin: 16px 0; font-size: 13.8px; }
+  .box.tint { background: var(--reef-soft); border-color: color-mix(in srgb, var(--reef) 22%, var(--line)); }
+  .box .box-label { display: block; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; font-weight: 600; }
+
+  ol.steps { padding-left: 0; list-style: none; counter-reset: step; margin: 16px 0; }
+  ol.steps li { counter-increment: step; padding-left: 34px; position: relative; margin-bottom: 12px; }
+  ol.steps li::before {
+    content: counter(step); position: absolute; left: 0; top: 0.05em; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--reef); color: #fff; font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .test-summary-row { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 20px; }
+  .test-summary-tile { flex: 1 1 120px; border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; }
+  .test-summary-tile .n { font-family: "IBM Plex Mono", monospace; font-weight: 700; font-size: 19px; color: var(--reef); }
+  .test-summary-tile .l { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  details.tf { border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; overflow: hidden; }
+  details.tf summary {
+    cursor: pointer; padding: 11px 16px; font-family: "IBM Plex Mono", monospace; font-size: 12.3px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; list-style: none; background: var(--surface);
+  }
+  details.tf summary::-webkit-details-marker { display: none; }
+  details.tf summary .fcount { color: var(--muted); font-size: 11px; }
+  details.tf summary::after { content: "+"; color: var(--muted); font-size: 15px; flex: none; }
+  details.tf[open] summary::after { content: "\2212"; }
+  details.tf .tlist { padding: 4px 16px 12px; }
+  details.tf .tlist div { font-size: 12.3px; padding: 6px 0 6px 16px; border-top: 1px solid var(--line); position: relative; font-family: "Instrument Sans", sans-serif; }
+  details.tf .tlist div:first-child { border-top: none; }
+  details.tf .tlist div::before { content: "\2713"; position: absolute; left: 0; color: var(--good); font-size: 11px; top: 7px; }
+  details.tf .tlist .grp { color: var(--reef-deep); font-weight: 600; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; }
+  details.tf .tlist .grp::before { content: ""; }
+
+  /* search overlay */
+  .search-overlay { position: fixed; inset: 0; background: rgba(10,18,20,0.4); display: none; align-items: flex-start; justify-content: center; padding-top: 12vh; z-index: 100; }
+  .search-overlay.open { display: flex; }
+  .search-panel { background: var(--paper); border-radius: 14px; width: min(560px, 92vw); max-height: 60vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px -20px rgba(0,0,0,0.4); overflow: hidden; }
+  .search-input-row { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .search-input-row svg { flex: none; color: var(--muted); }
+  #search-input { border: none; outline: none; font-size: 15px; flex: 1; font-family: "Instrument Sans", sans-serif; color: var(--ink); }
+  .search-esc { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; }
+  #search-results { overflow-y: auto; padding: 8px; }
+  .sr-item { display: block; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+  .sr-item:hover, .sr-item.sel { background: var(--reef-soft); }
+  .sr-item .sr-crumb { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--reef-deep); text-transform: uppercase; letter-spacing: 0.04em; }
+  .sr-item .sr-title { font-size: 13.5px; font-weight: 600; color: var(--ink); margin-top: 2px; }
+  .sr-item .sr-snip { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .sr-empty { padding: 26px 12px; text-align: center; color: var(--muted); font-size: 13px; }
+
+  [data-page] { display: none; }
+  [data-page].active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex; align-items:center; gap:12px;">
+    <button class="menu-toggle" id="menu-toggle" aria-label="Toggle navigation">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke="#0B1214" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <a class="brand" href="#/introduction" style="text-decoration:none;">
+      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0B79A6"/><path d="M6 13c3 3 5-4 8-4s5 7 8 4" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M6 20c3 3 5-4 8-4s5 7 8 4" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" opacity=".55"/></svg>
+      <span class="word">CORAL</span><span class="sub">docs</span>
+    </a>
+  </div>
+  <div class="top-actions">
+    <button class="search-btn" id="search-open">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M14 14l-3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      Search <kbd>&#8984;K</kbd>
+    </button>
+    <a class="launch-btn" href="https://dami904.github.io/coral/" target="_blank" rel="noopener">Live site&nbsp;&rarr;</a>
+  </div>
+</div>
+
+<div class="shell">
+  <nav class="sidebar" id="sidebar">
+    <div class="nav-group">
+      <h5>OVERVIEW</h5>
+      <a href="#/introduction" data-nav="introduction">Introduction</a>
+      <a href="#/how-it-works" data-nav="how-it-works">How it works</a>
+    </div>
+    <div class="nav-group">
+      <h5>ON-CHAIN PROOF</h5>
+      <a href="#/testnet" data-nav="testnet">Testnet - Base Sepolia</a>
+      <a href="#/mainnet" data-nav="mainnet">Mainnet - Base</a>
+      <a href="#/bug" data-nav="bug">A bug, found live</a>
+      <a href="#/acp" data-nav="acp">Coral on Virtuals ACP</a>
+    </div>
+    <div class="nav-group">
+      <h5>TESTING</h5>
+      <a href="#/testing" data-nav="testing">Full test coverage</a>
+    </div>
+    <div class="nav-group">
+      <h5>TRUST</h5>
+      <a href="#/trust-model" data-nav="trust-model">Trust model</a>
+      <a href="#/try-it" data-nav="try-it">Try it yourself</a>
+    </div>
+  </nav>
+
+  <main class="content" id="content">
+
+    <article data-page="introduction">
+      <div class="crumb"><b>OVERVIEW</b> / INTRODUCTION</div>
+      <h1 class="page-title">Introduction</h1>
+      <div class="page-sub">An on-chain agent that checks its own memory before it ever spends - a smart contract, not its own judgment, decides whether it's allowed to.</div>
+      <div class="pill-row">
+        <span class="pill live"><span class="dot"></span>Base mainnet - live</span>
+        <span class="pill live"><span class="dot"></span>Base Sepolia - live</span>
+        <span class="pill">155 unit tests</span>
+        <span class="pill">56 Foundry tests</span>
+      </div>
+      <div class="wave-divider" aria-hidden="true">
+        <div class="wave-breathe">
+          <svg viewBox="0 0 2880 56" preserveAspectRatio="none">
+            <path class="back" transform="translate(120,-7)" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+            <path class="front" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+          </svg>
+        </div>
+      </div>
+      <div class="page-body">
+        <h2 id="i-problem">The problem</h2>
+        <p>"Is this token worth looking at?" gets asked hundreds of times about the same handful of contracts. Sibyl Labs' x402 Intelligence Endpoint answers that with a real builder-conviction score - for a real price, <b>$0.25</b> per fresh evaluation, confirmed live, not assumed. Paying for a fresh check on every single ask is wasteful. Never checking is unsafe. Forgetting a verdict already paid for is worse than either.</p>
+        <p>Coral caches what it learns in <b>Sibyl Memory</b>, so it only pays once per contract per staleness window. The whole project is judged on one gate: delete Sibyl Memory's SQLite file, and the next lookup for a contract Coral answered a minute earlier is a genuine cache miss again - it pays again, on real money, because the thing it would have remembered is gone.</p>
+        <h2 id="i-built">Built for</h2>
+        <p><b>Sibyl Labs Hackathon</b> (Sep 1&ndash;10, 2026). Source: <a href="https://github.com/Dami904/coral" target="_blank" rel="noopener">github.com/Dami904/coral</a>. Landing page: <a href="https://dami904.github.io/coral/" target="_blank" rel="noopener">dami904.github.io/coral</a>.</p>
+      </div>
+    </article>
+
+    <article data-page="how-it-works">
+      <div class="crumb"><b>OVERVIEW</b> / HOW IT WORKS</div>
+      <h1 class="page-title">How it works</h1>
+      <div class="page-sub">One function runs the entire critical path, and memory is checked before the chain is ever touched.</div>
+      <div class="wave-divider" aria-hidden="true">
+        <div class="wave-breathe">
+          <svg viewBox="0 0 2880 56" preserveAspectRatio="none">
+            <path class="back" transform="translate(120,-7)" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+            <path class="front" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+          </svg>
+        </div>
+      </div>
+      <div class="page-body">
+        <h2 id="h-flow">The decision flow</h2>
+        <p class="subtle"><code>handleJobQuery</code> in <code>src/decisionCore.ts</code> - not an optimization, an invariant.</p>
+        <ol class="steps">
+          <li><b>Receive</b> - a query for a contract address arrives (free HTTP, Ping, or an ACP job).</li>
+          <li><b>Recall</b> - Sibyl Memory is checked first. A fresh hit answers instantly, free, no chain call at all.</li>
+          <li><b>Decide</b> - a real miss hands the decision to <code>SpendGuard</code>, a deployed contract, not the agent's own reasoning.</li>
+          <li><b>Pay, cache, journal</b> - only once payment clears does Coral call Sibyl and cache the result. The payment is journaled to memory <i>before</i> that call, so even a downstream failure leaves a reconcilable trail.</li>
+        </ol>
+        <h2 id="h-rules">SpendGuard's four rules</h2>
+        <p class="subtle">Coral's wallet can only ever <i>request</i> a payment - it never holds direct transfer authority. Every request is checked against four rules, in this fixed order, every time.</p>
+        <div class="table-wrap">
+          <table class="d">
+            <thead><tr><th>#</th><th>Rule</th><th>What it enforces</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">01</td><td><b>Allowlist</b></td><td>Only pre-approved recipient addresses can ever receive funds.</td></tr>
+              <tr><td class="mono">02</td><td><b>Max per payment</b></td><td>A hard ceiling no single request can exceed, approved or not.</td></tr>
+              <tr><td class="mono">03</td><td><b>Budget window</b></td><td>A rolling spend cap over a fixed time window, not per-call alone.</td></tr>
+              <tr><td class="mono">04</td><td><b>Rate limit</b></td><td>A cap on how many payments can fire within that same window.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Above a configurable <code>humanApprovalThreshold</code>, even a request that clears all four rules doesn't execute - it waits for a separate, human-signed <code>ownerApprove</code> call. Policy changes and withdrawals go through a mandatory 1-hour queue-then-execute timelock, so even a compromised owner key can't rewrite the rules instantly.</p>
+      </div>
+    </article>
+
+    <article data-page="testnet">
+      <div class="crumb"><b>ON-CHAIN PROOF</b> / TESTNET</div>
+      <h1 class="page-title">Testnet - Base Sepolia</h1>
+      <div class="page-sub">Chain 84532. Where every rule was proven safe to run before real money was ever at risk.</div>
+      <div class="wave-divider" aria-hidden="true">
+        <div class="wave-breathe">
+          <svg viewBox="0 0 2880 56" preserveAspectRatio="none">
+            <path class="back" transform="translate(120,-7)" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+            <path class="front" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+          </svg>
+        </div>
+      </div>
+      <div class="page-body">
+        <h2 id="tn-contracts">Contracts</h2>
+        <div class="table-wrap">
+          <table class="d">
+            <thead><tr><th>Contract</th><th>Address</th></tr></thead>
+            <tbody>
+              <tr><td>SpendGuard</td><td class="mono"><a href="https://sepolia.basescan.org/address/0x1367B24C8377F659124f22ABC00fb07e5835404b" target="_blank" rel="noopener">0x1367B24C8377F659124f22ABC00fb07e5835404b</a></td></tr>
+              <tr><td>USDC (real Circle testnet token)</td><td class="mono"><a href="https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e" target="_blank" rel="noopener">0x036CbD53842c5426634e7929541eC2318f3dCF7e</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h2 id="tn-tx">Real transactions</h2>
+        <div class="table-wrap">
+          <table class="d">
+            <thead><tr><th>What</th><th>Transaction</th></tr></thead>
+            <tbody>
+              <tr><td>First-touch payment - a genuine cache miss, SpendGuard-gated</td><td class="mono"><a href="https://sepolia.basescan.org/tx/0xc7047761a5ce321dca8ef37add4d708af1fc2b8e71e580b2c0d85b0a410afca2" target="_blank" rel="noopener">0xc70477&hellip;0afca2</a></td></tr>
+              <tr><td>Escalation-tier payment - required a real <code>ownerApprove</code> first</td><td class="mono"><a href="https://sepolia.basescan.org/tx/0x369508bea3fb14a11035b4f2b30d34ac7d355f1ae7cdb23261a2493f44c6e320" target="_blank" rel="noopener">0x369508&hellip;44c6e320</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="box tint"><span class="box-label">Reproduce it</span>Delete <code>SIBYL_MEMORY_DB</code> and re-query the same contract above - it pays again, provably. Run it yourself: <code>pnpm live:deletion-test</code>.</div>
+      </div>
+    </article>
+
+    <article data-page="mainnet">
+      <div class="crumb"><b>ON-CHAIN PROOF</b> / MAINNET</div>
+      <h1 class="page-title">Mainnet - Base</h1>
+      <div class="page-sub">Chain 8453. Real ETH, real USDC, real Sibyl endpoint - deployed and exercised, not just written.</div>
+      <div class="wave-divider" aria-hidden="true">
+        <div class="wave-breathe">
+          <svg viewBox="0 0 2880 56" preserveAspectRatio="none">
+            <path class="back" transform="translate(120,-7)" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+            <path class="front" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+          </svg>
+        </div>
+      </div>
+      <div class="page-body">
+        <h2 id="mn-details">Deployment</h2>
+        <div class="table-wrap">
+          <table class="d">
+            <tbody>
+              <tr><td>SpendGuard</td><td class="mono"><a href="https://basescan.org/address/0xfC10f0A357c74318451A583C30A1fb5C8c7a2407" target="_blank" rel="noopener">0xfC10f0A357c74318451A583C30A1fb5C8c7a2407</a> - verified source</td></tr>
+              <tr><td>USDC (real Base USDC)</td><td class="mono"><a href="https://basescan.org/address/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" target="_blank" rel="noopener">0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</a></td></tr>
+              <tr><td>Sibyl's real payTo</td><td class="mono"><a href="https://basescan.org/address/0xe3e14118238b5693c854674f7c276136a2dd311f" target="_blank" rel="noopener">0xe3e14118238b5693c854674f7c276136a2dd311f</a> - cross-checked against Sibyl's own <code>.well-known/agent-registration.json</code></td></tr>
+              <tr><td>Owner (timelocked policy control)</td><td class="mono">0x2993f576Aa99C82188242735806b3a0Dce96B787</td></tr>
+              <tr><td>Agent (request-only wallet)</td><td class="mono">0x004e643E3C9043755d623637F59537c49E6613F7</td></tr>
+              <tr><td>Current live policy</td><td class="mono">maxPerPayment $0.75 &middot; humanApprovalThreshold $0.50 &middot; budget $3.00/hr</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h2 id="mn-tx">Real transactions, in order</h2>
+        <div class="table-wrap">
+          <table class="d">
+            <thead><tr><th>What</th><th>Transaction</th><th>Cost</th></tr></thead>
+            <tbody>
+              <tr><td>SpendGuard deployed - constructor verified on Basescan, policy read back on-chain after</td><td class="mono"><a href="https://basescan.org/tx/0xf74e724a80bc7e28c170e1f677bfdac0ecfff305126c5d0741fbee9743050d1f" target="_blank" rel="noopener">0xf74e72&hellip;3050d1f</a></td><td class="num">$0.026 gas</td></tr>
+              <tr><td>First real escalated payment - owner-approved, real money moved</td><td class="mono"><a href="https://basescan.org/tx/0xe70d3765e7955850cd22c22345a5e877f358d5776eaff0880ec65bac985ead8b" target="_blank" rel="noopener">0xe70d37&hellip;985ead8b</a></td><td class="num">$0.25</td></tr>
+              <tr><td>Policy change queued - <code>queueSetPolicy</code>, starts the 1hr timelock</td><td class="mono"><a href="https://basescan.org/tx/0x7f6b449f459caab01945c99f8c210cbdf0aac0201becb4797d64d1ec162135e0" target="_blank" rel="noopener">0x7f6b44&hellip;c162135e0</a></td><td class="num">gas only</td></tr>
+              <tr><td>Policy change executed - <code>executeSetPolicy</code>, confirmed on-chain</td><td class="mono"><a href="https://basescan.org/tx/0xb3e8c286dbcf809bcd2275d4484e287ddfd795eb8215485f64e7d7da28280ace" target="_blank" rel="noopener">0xb3e8c2&hellip;80280ace</a></td><td class="num">gas only</td></tr>
+              <tr><td>Real ACP-mediated payment - auto-paid, zero escalation delay</td><td class="mono"><a href="https://basescan.org/tx/0x0f8c8ce6bc987275e9d320dfdb7b66f7d2e24fd629890824fc8939172c5b02d6" target="_blank" rel="noopener">0x0f8c8c&hellip;72c5b02d6</a></td><td class="num">$0.25</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </article>
+
+    <article data-page="bug">
+      <div class="crumb"><b>ON-CHAIN PROOF</b> / A BUG, FOUND LIVE</div>
+      <h1 class="page-title">A real bug, found live</h1>
+      <div class="page-sub">Sibyl's own documentation doesn't match Sibyl's own API.</div>
+      <div class="wave-divider" aria-hidden="true">
+        <div class="wave-breathe">
+          <svg viewBox="0 0 2880 56" preserveAspectRatio="none">
+            <path class="back" transform="translate(120,-7)" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+            <path class="front" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+          </svg>
+        </div>
+      </div>
+      <div class="page-body">
+        <h2 id="b-what">What happened</h2>
+        <p>Sibyl's endpoint self-documents its paid response as <code>{"tier": "high_conviction", ...}</code>. The first real mainnet ACP job delivered <code>{"output":"unknown",...}</code> instead - a completed job, real payment, real HTTP 200, no error anywhere, and silently wrong data.</p>
+        <pre class="code"><span class="c">// real response, WETH, Base mainnet</span>
+{
+  <span class="g">"agent"</span>: "SIBYL #20880",
+  <span class="g">"conviction_score"</span>: 19,
+  <span class="g">"conviction_tier"</span>: "medium",   <span class="c">// the real field - docs say "tier"</span>
+  <span class="g">"summary"</span>: "WETH conviction score: 19/30 (medium)..."
+}</pre>
+        <h2 id="b-cause">Root cause</h2>
+        <p><code>X402IntelligenceClient.deriveTier()</code> only checked for a <code>tier</code> key, which the real response doesn't have.</p>
+        <h2 id="b-fix">Fix</h2>
+        <p>Checks the confirmed-live <code>conviction_tier</code> field first, falls back to <code>tier</code> only if absent (in case a different Sibyl API version genuinely uses it). Mock server's wire shape updated to match. All 155 tests pass after the fix, redeployed to the live ACP provider the same session it was found.</p>
+      </div>
+    </article>
+
+    <article data-page="acp">
+      <div class="crumb"><b>ON-CHAIN PROOF</b> / VIRTUALS ACP</div>
+      <h1 class="page-title">Coral on Virtuals ACP</h1>
+      <div class="page-sub">Listed, live, and hired for a real job - on real mainnet money, by a separate buyer identity.</div>
+      <div class="wave-divider" aria-hidden="true">
+        <div class="wave-breathe">
+          <svg viewBox="0 0 2880 56" preserveAspectRatio="none">
+            <path class="back" transform="translate(120,-7)" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+            <path class="front" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+          </svg>
+        </div>
+      </div>
+      <div class="page-body">
+        <h2 id="acp-listing">Listing</h2>
+        <div class="table-wrap">
+          <table class="d">
+            <tbody>
+              <tr><td>Offering</td><td>coral_cache &middot; 0.1 USDC per job</td></tr>
+              <tr><td>Coral's ACP wallet</td><td class="mono">0x90d9a36D8a262409C4f1F796F001a309Ee6bF58e</td></tr>
+              <tr><td>Console</td><td><a href="https://app.virtuals.io/acp/agents/01a06873-3eee-777e-8f64-5d337d6d6342?tab=console" target="_blank" rel="noopener">app.virtuals.io/acp/agents/01a06873&hellip;</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h2 id="acp-job">Job 77783 - first complete real round trip</h2>
+        <p>Buyer <code>0xa5BEdE3fcA93968cb76137c516b704537F84A12a</code> funded 0.1 real USDC to evaluate WETH's own mainnet contract - deliberately not something already cached, so the miss was genuine. Coral's guard balance dropped exactly $0.25 on-chain, matching the real Sibyl payment, before the buyer received their result.</p>
+        <div class="table-wrap">
+          <table class="d">
+            <tbody>
+              <tr><td>Token evaluated</td><td class="mono">0x4200000000000000000000000000000000000006 (WETH)</td></tr>
+              <tr><td>Deliverable hash</td><td class="mono">0xba918483a9cddbbfca4d10cea89a10783d7afc0b1761e6c2240cc7de4869c607</td></tr>
+              <tr><td>Underlying real payment</td><td class="mono"><a href="https://basescan.org/tx/0x0f8c8ce6bc987275e9d320dfdb7b66f7d2e24fd629890824fc8939172c5b02d6" target="_blank" rel="noopener">0x0f8c8c&hellip;72c5b02d6</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </article>
+
+    <article data-page="testing">
+      <div class="crumb"><b>TESTING</b> / FULL COVERAGE</div>
+      <h1 class="page-title">Full test coverage</h1>
+      <div class="page-sub">Every test that runs today, by file. Nothing summarized away.</div>
+      <div class="wave-divider" aria-hidden="true">
+        <div class="wave-breathe">
+          <svg viewBox="0 0 2880 56" preserveAspectRatio="none">
+            <path class="back" transform="translate(120,-7)" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+            <path class="front" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+          </svg>
+        </div>
+      </div>
+      <div class="page-body">
+        <div class="test-summary-row">
+          <div class="test-summary-tile"><div class="n">155</div><div class="l">unit tests (vitest) &middot; 13 files</div></div>
+          <div class="test-summary-tile"><div class="n">56</div><div class="l">Foundry tests &middot; 2 contracts</div></div>
+          <div class="test-summary-tile"><div class="n">0</div><div class="l">failing, skipped, or mocked chain calls</div></div>
+        </div>
+
+        <h2 id="t-unit">Unit tests - <code>pnpm test</code> (vitest)</h2>
+
+        <details class="tf"><summary><span>decisionCore.test.ts</span><span class="fcount">24 tests</span></summary><div class="tlist">
+          <div class="grp">handleJobQuery</div>
+          <div>checks memory before ever calling the chain (non-negotiable invariant)</div>
+          <div>returns the cached tier and never touches the chain when the cache is fresh</div>
+          <div>treats a stale cache entry as a miss and requests payment</div>
+          <div>requests exactly the configured price for the vendor address on a cache miss</div>
+          <div>on a blocked payment: returns blocked, records the reason, never calls intelligence or caches anything</div>
+          <div>on an escalated (pending) payment: returns pending_approval, does not cache or check intelligence yet</div>
+          <div>on a contract with an already-pending escalation: returns it directly and never proposes a second one</div>
+          <div>on a sent payment: checks intelligence, caches the tier, and journals the paid event</div>
+          <div>threads an optional requester into the journal event when the caller provides one, omits it otherwise</div>
+          <div>on a sent payment whose intelligence check then fails: journals the tx before throwing, writes no cache entry</div>
+          <div>on a sent payment whose cache write then fails: journals the tx (with tier) before throwing</div>
+          <div>every branch records exactly one journal event, tagged to the queried contract</div>
+          <div class="grp">resumeAfterApproval</div>
+          <div>returns still_pending and never touches intelligence or memory while unresolved</div>
+          <div>on rejected: returns rejected, journals it, never calls intelligence, clears the pending-escalation record</div>
+          <div>on approved: finishes exactly like a first-touch payment - checks intelligence and caches the tier</div>
+          <div>never re-requests payment, even when it would resolve to approved - checkPendingResolution is the only call made</div>
+          <div class="grp">handleGatewayQuery</div>
+          <div>on an already-consumed payment: returns payment_already_used and never touches verification, chain, or intelligence</div>
+          <div>on a not-found payment: returns payment_not_found and never marks it consumed</div>
+          <div>on a payment sent to the wrong recipient: returns payment_wrong_recipient, never marks consumed</div>
+          <div>on an insufficient payment: returns payment_insufficient with the observed and required amounts, never marks consumed</div>
+          <div>on a valid payment with a cache hit: marks the payment consumed before delegating, and returns the cached tier without touching the chain</div>
+          <div>on a valid payment with a cache miss: delegates to the same paid flow as handleJobQuery, still gated by SpendGuard</div>
+          <div>on a valid payment whose downstream check escalates: returns pending_approval, payment stays consumed (no refund path)</div>
+          <div>passes the configured gateway fee, not the underlying Sibyl price, as the minimum to verifyPayment</div>
+        </div></details>
+
+        <details class="tf"><summary><span>memory/sibylMemoryClient.test.ts</span><span class="fcount">34 tests</span></summary><div class="tlist">
+          <div class="grp">recallJob</div>
+          <div>returns the parsed record on a successful recall</div>
+          <div>returns null on a NOT_FOUND rejection, without retrying</div>
+          <div>throws MemoryToolRejectedError on a real (non-NOT_FOUND) rejection, without retrying</div>
+          <div>retries a transport-level (UNKNOWN) failure and succeeds</div>
+          <div class="grp">rememberJob</div>
+          <div>writes successfully on the first attempt</div>
+          <div>throws MemoryToolRejectedError immediately on a real rejection - no reconcile re-read</div>
+          <div>on a transport-level failure, re-reads first: if the write already landed, does not blindly resend</div>
+          <div>on a transport-level failure, resends once the reconcile re-read confirms it's still missing</div>
+          <div class="grp">recordEvent</div>
+          <div>never retries on a transport-level failure - journal writes have no idempotency key</div>
+          <div>throws MemoryToolRejectedError on a real rejection</div>
+          <div class="grp">wasPaymentConsumed</div>
+          <div>returns true when a record exists for that tx hash</div>
+          <div>returns false on a NOT_FOUND rejection, without retrying</div>
+          <div>throws MemoryToolRejectedError on a real (non-NOT_FOUND) rejection</div>
+          <div>retries a transport-level failure</div>
+          <div class="grp">markPaymentConsumed</div>
+          <div>writes successfully on the first attempt</div>
+          <div>throws MemoryToolRejectedError on a rejection - no retry, this is the entire replay-protection guarantee</div>
+          <div>on a transport-level failure, re-reads first: if the write already landed, does not blindly resend</div>
+          <div>on a transport-level failure, resends once the reconcile re-read confirms it's still missing</div>
+          <div class="grp">getPendingEscalation</div>
+          <div>returns the parsed requestId/fromBlock as bigints on a successful recall</div>
+          <div>returns null on a NOT_FOUND rejection, without retrying</div>
+          <div>throws MemoryToolRejectedError on a real (non-NOT_FOUND) rejection</div>
+          <div>retries a transport-level failure</div>
+          <div class="grp">setPendingEscalation</div>
+          <div>writes successfully on the first attempt, serializing bigints as strings</div>
+          <div>throws MemoryToolRejectedError immediately on a real rejection - no reconcile re-read</div>
+          <div>on a transport-level failure, re-reads first: if the write already landed, does not blindly resend</div>
+          <div>on a transport-level failure, resends once the reconcile re-read confirms it's still missing</div>
+          <div class="grp">searchSimilar</div>
+          <div>maps entity-tier hits, passing tiers:'entity' explicitly</div>
+          <div>returns an empty array when there are no results</div>
+          <div>throws MemoryToolRejectedError on a rejection</div>
+          <div>retries a transport-level failure</div>
+          <div class="grp">clearPendingEscalation</div>
+          <div>clears successfully on the first attempt</div>
+          <div>treats a NOT_FOUND rejection as a successful no-op - already cleared</div>
+          <div>throws MemoryToolRejectedError on a real (non-NOT_FOUND) rejection</div>
+          <div>retries a transport-level failure - without this, a stale pending-escalation record could block real payments forever</div>
+        </div></details>
+
+        <details class="tf"><summary><span>http/httpGatewayServer.test.ts</span><span class="fcount">22 tests</span></summary><div class="tlist">
+          <div class="grp">GET /health</div>
+          <div>returns 200 ok without touching any port</div>
+          <div>sets Access-Control-Allow-Origin: * so browser callers aren't blocked cross-origin</div>
+          <div class="grp">GET /check</div>
+          <div>400s on a missing token</div>
+          <div>400s on a malformed token</div>
+          <div>200s a cache hit straight from memory, no payment involved</div>
+          <div>200s a fresh paid check on a cache miss - caller pays nothing, Coral's own guard does</div>
+          <div>503s when Coral's own SpendGuard policy blocks the payment</div>
+          <div>202s and surfaces the escalation request when the payment needs human sign-off</div>
+          <div>returns the SAME pending request on a repeat call instead of proposing a second on-chain escalation</div>
+          <div class="grp">GET /resume</div>
+          <div>400s when required params are missing</div>
+          <div>202s still_pending without asserting a false resolution</div>
+          <div>409s a rejected request</div>
+          <div>200s once approved, running the same intelligence-check + cache-write tail a normal payment does</div>
+          <div class="grp">GET /search</div>
+          <div>501s when the deployment has no searchSimilar wired up</div>
+          <div>400s when 'q' is missing</div>
+          <div>200s with mapped results and never calls the payment/cache path</div>
+          <div>caps limit at 50 and defaults to 10 when omitted or invalid</div>
+          <div class="grp">unhandled routes and methods</div>
+          <div>404s an unknown path</div>
+          <div>405s a non-GET method</div>
+          <div class="grp">unexpected failures</div>
+          <div>500s and does not leak the raw error to the client</div>
+          <div>also 500s /search cleanly when searchSimilar throws, via the same shared catch</div>
+          <div class="grp">concurrency: per-contract lock</div>
+          <div>never double-pays for two concurrent /check calls on the same never-cached contract</div>
+        </div></details>
+
+        <details class="tf"><summary><span>pollOnce.test.ts</span><span class="fcount">16 tests</span></summary><div class="tlist">
+          <div class="grp">pollOnce</div>
+          <div>skips broadcasts entirely - no handle call, no reply</div>
+          <div>skips messages already replied to</div>
+          <div>extracts the contract, calls handle with the sender as requester, and replies with the formatted outcome</div>
+          <div>replies with no_contract_found and never calls handle when no address is present</div>
+          <div>replies with an error message and keeps processing when handle throws</div>
+          <div>gateway: a message with both an address and a tx hash calls handleGateway, not handle, and replies with its outcome</div>
+          <div>gateway: a message with only an address (no tx hash) still uses the free handle path unchanged</div>
+          <div>gateway: a pending_approval outcome is tracked in newlyPending exactly like the free path</div>
+          <div>gateway: replies with an error and keeps processing when handleGateway throws</div>
+          <div>returns the highest block seen even when nothing was actionable, and 0 processed on an empty inbox</div>
+          <div class="grp">extractContractAddress</div>
+          <div>finds a lowercase-normalized address anywhere in the text</div>
+          <div>returns null when no address is present</div>
+          <div class="grp">extractGatewayRequest</div>
+          <div>finds a lowercase-normalized address and tx hash when both are present, regardless of order</div>
+          <div>returns null when only an address is present - never mistaken for a gateway request</div>
+          <div>returns null when only a tx hash is present - its own 40-hex-char prefix is never mistaken for a separate address</div>
+          <div class="grp">defaultFormatReply</div>
+          <div>formats every outcome variant into non-empty human text</div>
+        </div></details>
+
+        <details class="tf"><summary><span>chain/spendGuardClient.test.ts</span><span class="fcount">11 tests</span></summary><div class="tlist">
+          <div class="grp">requestPayment</div>
+          <div>retries a pre-broadcast writeContract failure and succeeds</div>
+          <div>pins one nonce across every writeContract retry attempt - never fetches a fresh one per attempt</div>
+          <div>never resends once a tx hash exists - only retries polling for the receipt</div>
+          <div>recovers if the receipt poll succeeds within the retry budget</div>
+          <div>treats a reverted receipt as a real failure, not a retryable/unknown one</div>
+          <div>returns a pending outcome with the receipt's blockNumber attached</div>
+          <div class="grp">checkPendingResolution</div>
+          <div>returns still_pending when no resolving event is visible yet</div>
+          <div>returns rejected when a PaymentRejected log is found, without querying PaymentSent</div>
+          <div>returns approved with amount/payTo read from the matching PaymentSent in the same tx</div>
+          <div>retries a transient getLogs failure on one query without affecting the other</div>
+          <div>throws if an approved request has no decodable matching PaymentSent - unexpected state, not swallowed</div>
+        </div></details>
+
+        <details class="tf"><summary><span>acp/acpProvider.test.ts</span><span class="fcount">10 tests</span></summary><div class="tlist">
+          <div class="grp">parseAcpRequirement</div>
+          <div>accepts a well-formed requirement, lowercasing the token</div>
+          <div>rejects non-JSON content</div>
+          <div>rejects a JSON array (not an object)</div>
+          <div>rejects an object missing the token field</div>
+          <div>rejects a malformed token address</div>
+          <div>rejects a token that's the wrong length</div>
+          <div class="grp">usdc6dpToDollars</div>
+          <div>converts the repo's raw 6dp convention to AssetToken.usdc's expected human-decimal units</div>
+          <div>handles zero</div>
+          <div class="grp">formatAcpDeliverable</div>
+          <div>serializes a cache_hit outcome's output as the job deliverable's output field</div>
+          <div>serializes a paid outcome's output the same way, dropping the tx hash from the deliverable itself</div>
+        </div></details>
+
+        <details class="tf"><summary><span>gateway/incomingPaymentVerifier.test.ts</span><span class="fcount">8 tests</span></summary><div class="tlist">
+          <div class="grp">verifyPayment</div>
+          <div>returns not_found when the tx receipt can't be fetched</div>
+          <div>returns not_found when the tx reverted</div>
+          <div>returns wrong_recipient when no USDC Transfer to the guard address is present</div>
+          <div>ignores a Transfer event from a different token contract even if it's addressed to the guard</div>
+          <div>returns insufficient with the observed total when the transferred amount is below minAmount</div>
+          <div>returns valid with the payer and amount when a matching Transfer covers minAmount</div>
+          <div>sums multiple matching Transfer events in the same receipt rather than only reading the first</div>
+          <div>reads the USDC address from the guard contract only once across repeated calls</div>
+        </div></details>
+
+        <details class="tf"><summary><span>x402Client.test.ts</span><span class="fcount">7 tests</span></summary><div class="tlist">
+          <div class="grp">X402IntelligenceClient</div>
+          <div>relays the tx hash and token, and returns a tier deterministically keyed off the token</div>
+          <div>rejects a malformed tx hash the same way the server does (400)</div>
+          <div>rejects reuse of an already-used tx hash (409, single-use)</div>
+          <div class="grp">retry/UNKNOWN handling</div>
+          <div>retries a transport-level (network) failure with the same hash and succeeds</div>
+          <div>falls back to a `tier` field if `conviction_tier` isn't present (a different Sibyl API version, not assumed away)</div>
+          <div>throws IntelligenceResultUnrecoverableError when a retry (not the first attempt) hits 409</div>
+          <div>throws the plain single-use error (not Unrecoverable) on a genuine first-attempt 409</div>
+        </div></details>
+
+        <details class="tf"><summary><span>pollLoop.test.ts</span><span class="fcount">6 tests</span></summary><div class="tlist">
+          <div class="grp">runPollLoop</div>
+          <div>advances the cursor across cycles and passes it to the next getInboxWithStatus call</div>
+          <div>stops promptly when the signal is already aborted before the first cycle</div>
+          <div>auto-resumes an approved escalated payment once detected, then stops tracking it</div>
+          <div>replies distinctly and stops tracking when a pending request is rejected</div>
+          <div>sends no extra reply while a resume check keeps reporting still_pending</div>
+          <div>skips pending-request tracking entirely when resumePending is not configured</div>
+        </div></details>
+
+        <details class="tf"><summary><span>lib/retry.test.ts</span><span class="fcount">6 tests</span></summary><div class="tlist">
+          <div class="grp">withRetry</div>
+          <div>returns the result on the first successful attempt, no sleep</div>
+          <div>retries on a retryable failure and succeeds within maxAttempts</div>
+          <div>exhausts maxAttempts and rethrows the last error</div>
+          <div>rethrows immediately without retrying when isRetryable returns false</div>
+          <div>only calls isRetryable with the actual thrown error</div>
+          <div>backs off with growing bounds: each delay is within [0, baseDelayMs * 2^(attempt-1))</div>
+        </div></details>
+
+        <details class="tf"><summary><span>ping/pingChainClient.test.ts</span><span class="fcount">5 tests</span></summary><div class="tlist">
+          <div class="grp">getInboxWithStatus</div>
+          <div>returns the mapped inbox on success</div>
+          <div>retries a transient RPC failure and succeeds - reads are safe to blind-retry</div>
+          <div>exhausts retries and rethrows if the RPC never recovers</div>
+          <div class="grp">sendReply</div>
+          <div>returns the tx hash on success</div>
+          <div>never retries - a lost response after a real send would mean sending twice</div>
+        </div></details>
+
+        <details class="tf"><summary><span>lib/keyedLock.test.ts</span><span class="fcount">4 tests</span></summary><div class="tlist">
+          <div class="grp">createKeyedLock</div>
+          <div>serializes two calls sharing the same key - the second never starts until the first settles</div>
+          <div>does not serialize calls with different keys - B finishes while A is still pending</div>
+          <div>an error in one call does not break subsequent calls for the same key</div>
+          <div>returns each call's own resolved value, not a shared one</div>
+        </div></details>
+
+        <details class="tf"><summary><span>decisionCore.invariant.test.ts</span><span class="fcount">2 tests</span></summary><div class="tlist">
+          <div class="grp">memory is checked before any payment (structural, not just behavioral)</div>
+          <div>handleJobQuery's own source calls memory.recallJob strictly before chain.requestPayment</div>
+          <div>resumeAfterApproval never calls chain.requestPayment again (it only resolves an existing escalation)</div>
+        </div></details>
+
+        <h2 id="t-foundry">Foundry tests - <code>forge test</code></h2>
+
+        <details class="tf"><summary><span>SpendGuard.t.sol</span><span class="fcount">48 tests</span></summary><div class="tlist">
+          <div>test_Constructor_SetsState</div><div>test_Constructor_RevertsIfBudgetCapacityBelowFormulaMinimum</div>
+          <div>test_RequestPayment_RevertsIfNotAgent</div><div>test_RequestPayment_BlocksNonAllowlistedVendor</div>
+          <div>test_RequestPayment_AllowlistCheckedBeforeMaxPerPayment</div><div>test_RequestPayment_MaxPerPaymentCheckedBeforeBudgetWindow</div>
+          <div>test_RequestPayment_BudgetWindowCheckedBeforeRateLimit</div><div>test_RequestPayment_MaxPerPaymentBoundary</div>
+          <div>test_RequestPayment_RevertsIfGuardHasInsufficientBalance</div><div>test_RequestPayment_AutoExecutesBelowThreshold_TransfersAndEmits</div>
+          <div>test_RequestPayment_AutoExecutesAtThresholdBoundary</div><div>test_RequestPayment_EscalatesAboveThreshold_NoTransferYet</div>
+          <div>test_RequestPayment_PendingDoesNotConsumeBudgetOrRateUntilApproved</div><div>test_RequestPayment_BudgetWindow_InclusiveBoundaryThenBlocks</div>
+          <div>test_RequestPayment_RateLimit_InclusiveBoundaryThenBlocks</div><div>test_BudgetWindow_ExpiredEntriesExcluded</div>
+          <div>test_BudgetWindow_ExactCutoffExcluded</div><div>test_RateWindow_ExpiredEntriesExcluded</div>
+          <div>test_RingBuffer_RateLogEvictsOldestBeyondCapacity</div><div>test_RingBuffer_BudgetLog_TightCapacityStillEnforcesWindow</div>
+          <div>test_OwnerApprove_RevertsIfNotOwner</div><div>test_OwnerApprove_RevertsForNonexistentRequest</div>
+          <div>test_OwnerApprove_RevertsIfAlreadyApproved</div><div>test_OwnerApprove_TransfersAndEmitsEvents</div>
+          <div>test_OwnerApprove_HasNoTimelockDelay</div><div>test_OwnerApprove_RevertsIfBudgetExceededAtApprovalTime</div>
+          <div>test_OwnerApprove_RevertsIfRateLimitExceededAtApprovalTime</div><div>test_OwnerReject_RevertsIfNotOwner</div>
+          <div>test_OwnerReject_RevertsForNonexistentRequest</div><div>test_OwnerReject_DeletesPendingAndBlocksLaterApprove</div>
+          <div>test_QueueSetPolicy_RevertsIfNotOwner</div><div>test_QueueSetPolicy_RevertsIfThresholdAboveCeiling</div>
+          <div>test_QueueSetPolicy_RevertsIfRateMaxExceedsCapacity</div><div>test_QueueSetPolicy_ExecuteRevertsBeforeDelayElapsed</div>
+          <div>test_QueueSetPolicy_ExecuteSucceedsAtDelayBoundary</div><div>test_CancelSetPolicy_RevertsIfNotOwner</div>
+          <div>test_CancelSetPolicy_PreventsExecute</div><div>test_QueueWithdraw_RevertsIfNotOwner</div>
+          <div>test_QueueWithdraw_ExecuteRevertsBeforeDelayElapsed</div><div>test_QueueWithdraw_ExecuteSucceedsAtDelayBoundary</div>
+          <div>test_CancelWithdraw_PreventsExecute</div><div>test_Withdraw_RevertsIfNotOwner</div>
+          <div>test_Withdraw_TransfersToOwner</div><div>test_TransferOwnership_RevertsIfNotOwner</div>
+          <div>test_TransferOwnership_RevertsForZeroAddress</div><div>test_TransferOwnership_DoesNotChangeOwnerUntilAccepted</div>
+          <div>test_AcceptOwnership_RevertsIfNotPendingOwner</div><div>test_AcceptOwnership_TransfersControlAndOldOwnerLosesAccess</div>
+        </div></details>
+
+        <details class="tf"><summary><span>MockUSDC.t.sol</span><span class="fcount">8 tests</span></summary><div class="tlist">
+          <div>test_Metadata</div><div>test_Mint_IncreasesBalanceAndSupply</div><div>test_Transfer_MovesBalance</div>
+          <div>test_Transfer_RevertsOnInsufficientBalance</div><div>test_Approve_SetsAllowance</div>
+          <div>test_TransferFrom_MovesBalanceAndDecreasesAllowance</div><div>test_TransferFrom_RevertsOnInsufficientAllowance</div>
+          <div>test_TransferFrom_RevertsOnInsufficientBalance</div>
+        </div></details>
+      </div>
+    </article>
+
+    <article data-page="trust-model">
+      <div class="crumb"><b>TRUST</b> / TRUST MODEL</div>
+      <h1 class="page-title">Trust model</h1>
+      <div class="page-sub">Exactly what's live, what's staged, and the known limitations.</div>
+      <div class="wave-divider" aria-hidden="true">
+        <div class="wave-breathe">
+          <svg viewBox="0 0 2880 56" preserveAspectRatio="none">
+            <path class="back" transform="translate(120,-7)" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+            <path class="front" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+          </svg>
+        </div>
+      </div>
+      <div class="page-body">
+        <h2 id="tr-status">What's live vs. staged</h2>
+        <div class="table-wrap">
+          <table class="d">
+            <thead><tr><th>Piece</th><th>Status</th><th>Detail</th></tr></thead>
+            <tbody>
+              <tr><td>Sibyl Memory</td><td><span class="status live">Live</span></td><td>Real <code>sibyl-memory-mcp</code> over stdio, real SQLite, deletion-tested against both deployed contracts.</td></tr>
+              <tr><td>SpendGuard, testnet</td><td><span class="status live">Live</span></td><td>Deployed to Base Sepolia; timelocked policy, fixed-capacity ring buffers, two-step ownership.</td></tr>
+              <tr><td>SpendGuard, mainnet</td><td><span class="status live">Live</span></td><td>Deployed, verified, funded, and paid out real USDC via a real policy today.</td></tr>
+              <tr><td>x402 payment, real Sibyl</td><td><span class="status live">Live</span></td><td>Real <code>directTx</code> settlement against Sibyl's production endpoint, real conviction data returned.</td></tr>
+              <tr><td>ACP on Virtuals, mainnet</td><td><span class="status live">Live</span></td><td>One full real job completed end-to-end: funded, paid, delivered.</td></tr>
+              <tr><td>Free HTTP gateway</td><td><span class="status staged">Testnet only</span></td><td>Wired to the mock evaluator on purpose - flipping to real mainnet money needs the same fix already applied to ACP.</td></tr>
+              <tr><td>Ping messaging</td><td><span class="status staged">Staged</span></td><td>Built and unit-tested against the real SDK. No testnet exists for Ping - a real send is real, public, irreversible mainnet spend, held for a deliberate go-ahead.</td></tr>
+              <tr><td>Gateway mode (paid, via Ping)</td><td><span class="status staged">Staged</span></td><td>Another agent pays Coral over Ping for the same lookup. Unit-tested against decoded receipts, not yet exercised against a real paying counterparty.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h2 id="tr-limits">Known limitations</h2>
+        <ul>
+          <li><b>Not a safety verdict.</b> Sibyl's score is builder conviction / community seed / on-chain proof of work - never a scam or rug-pull check.</li>
+          <li><b>Budget/rate logs are fixed-capacity by design.</b> Policy can be tightened freely post-deploy; loosening past the provisioned capacity needs a new deployment.</li>
+          <li><b>Single-EOA owner, no multisig yet.</b> Bounded by the 1-hour timelock; two-step ownership transfer means a Gnosis Safe can be swapped in later with zero contract changes.</li>
+          <li><b>In-memory pending-request tracking.</b> A process restart loses track of any escalation mid-flight.</li>
+          <li><b>The 120-second x402 relay window is real and can be lost</b> - observed live on this project's own first mainnet payment. Raising the auto-pay threshold above the real price removes the race for ordinary queries.</li>
+        </ul>
+      </div>
+    </article>
+
+    <article data-page="try-it">
+      <div class="crumb"><b>TRUST</b> / TRY IT YOURSELF</div>
+      <h1 class="page-title">Try it yourself</h1>
+      <div class="page-sub">No wallet, no credentials needed for the free path.</div>
+      <div class="wave-divider" aria-hidden="true">
+        <div class="wave-breathe">
+          <svg viewBox="0 0 2880 56" preserveAspectRatio="none">
+            <path class="back" transform="translate(120,-7)" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+            <path class="front" d="M0,22 C240,50 480,-6 720,22 C960,50 1200,-6 1440,22 C1680,50 1920,-6 2160,22 C2400,50 2640,-6 2880,22 L2880,56 L0,56 Z" />
+          </svg>
+        </div>
+      </div>
+      <div class="page-body">
+        <h2 id="ty-run">Run it locally</h2>
+        <pre class="code"><span class="c"># clone and install</span>
+git clone https://github.com/Dami904/coral && cd coral
+pnpm install
+
+<span class="c"># run the full test suite</span>
+pnpm test          <span class="c"># 155 tests, vitest</span>
+forge test         <span class="c"># 56 tests, Foundry</span>
+
+<span class="c"># prove the deletion-test gate live, against real testnet money</span>
+pnpm live:deletion-test</pre>
+        <h2 id="ty-curl">Hit the live gateway</h2>
+        <pre class="code">curl "https://3-216-178-169.nip.io/check?token=0x..."</pre>
+      </div>
+    </article>
+
+  </main>
+
+  <aside class="toc-right" id="toc-right">
+    <h5>ON THIS PAGE</h5>
+    <div id="toc-list"></div>
+  </aside>
+</div>
+
+<div class="search-overlay" id="search-overlay">
+  <div class="search-panel">
+    <div class="search-input-row">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M14 14l-3-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <input id="search-input" type="text" placeholder="Search docs..." autocomplete="off" spellcheck="false" />
+      <span class="search-esc">ESC</span>
+    </div>
+    <div id="search-results"></div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var pages = Array.prototype.slice.call(document.querySelectorAll("[data-page]"));
+    var navLinks = Array.prototype.slice.call(document.querySelectorAll("[data-nav]"));
+    var tocList = document.getElementById("toc-list");
+    var content = document.getElementById("content");
+
+    function pageMeta(el) {
+      var crumb = el.querySelector(".crumb");
+      return { id: el.getAttribute("data-page"), crumb: crumb ? crumb.textContent.trim() : "", title: el.querySelector(".page-title").textContent.trim() };
+    }
+
+    function showPage(id) {
+      var found = false;
+      pages.forEach(function (p) {
+        var match = p.getAttribute("data-page") === id;
+        p.classList.toggle("active", match);
+        if (match) found = true;
+      });
+      if (!found && pages[0]) { pages[0].classList.add("active"); id = pages[0].getAttribute("data-page"); }
+      navLinks.forEach(function (a) { a.classList.toggle("active", a.getAttribute("data-nav") === id); });
+      buildToc(id);
+      content.scrollTop = 0;
+      window.scrollTo(0, 0);
+      document.getElementById("sidebar").classList.remove("open");
+    }
+
+    function buildToc(id) {
+      tocList.innerHTML = "";
+      var active = document.querySelector('[data-page="' + id + '"]');
+      if (!active) return;
+      var heads = active.querySelectorAll(".page-body h2, .page-body h3");
+      if (!heads.length) { document.getElementById("toc-right").style.visibility = "hidden"; return; }
+      document.getElementById("toc-right").style.visibility = "visible";
+      heads.forEach(function (h) {
+        var a = document.createElement("a");
+        a.href = "#" + h.id;
+        a.textContent = h.textContent;
+        a.style.paddingLeft = h.tagName === "H3" ? "22px" : "12px";
+        a.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          h.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        tocList.appendChild(a);
+      });
+    }
+
+    function routeFromHash() {
+      var id = (location.hash || "").replace(/^#\//, "");
+      showPage(id || "introduction");
+    }
+    window.addEventListener("hashchange", routeFromHash);
+    routeFromHash();
+
+    // ---- mobile sidebar ----
+    var menuToggle = document.getElementById("menu-toggle");
+    var sidebar = document.getElementById("sidebar");
+    if (menuToggle) menuToggle.addEventListener("click", function () { sidebar.classList.toggle("open"); });
+
+    // ---- search ----
+    var overlay = document.getElementById("search-overlay");
+    var input = document.getElementById("search-input");
+    var results = document.getElementById("search-results");
+    var openBtn = document.getElementById("search-open");
+
+    var index = pages.map(function (p) {
+      var m = pageMeta(p);
+      var text = (p.querySelector(".page-body") || p).textContent.replace(/\s+/g, " ").trim();
+      return { id: m.id, crumb: m.crumb, title: m.title, text: text };
+    });
+
+    function openSearch() { overlay.classList.add("open"); input.value = ""; renderResults(""); setTimeout(function () { input.focus(); }, 10); }
+    function closeSearch() { overlay.classList.remove("open"); }
+
+    function renderResults(q) {
+      results.innerHTML = "";
+      q = q.trim().toLowerCase();
+      var matches = index;
+      if (q) {
+        matches = index.filter(function (e) { return (e.title + " " + e.text).toLowerCase().indexOf(q) !== -1; });
+      }
+      if (!matches.length) { results.innerHTML = '<div class="sr-empty">No results</div>'; return; }
+      matches.slice(0, 12).forEach(function (m, i) {
+        var el = document.createElement("a");
+        el.className = "sr-item" + (i === 0 ? " sel" : "");
+        el.href = "#/" + m.id;
+        var snippet = m.text;
+        if (q) {
+          var idx = snippet.toLowerCase().indexOf(q);
+          if (idx > -1) snippet = (idx > 40 ? "…" : "") + snippet.slice(Math.max(0, idx - 40), idx + 80) + "…";
+        } else {
+          snippet = snippet.slice(0, 100) + "…";
+        }
+        el.innerHTML = '<div class="sr-crumb">' + m.crumb + '</div><div class="sr-title">' + m.title + '</div><div class="sr-snip">' + snippet + '</div>';
+        el.addEventListener("click", function (ev) { ev.preventDefault(); location.hash = "#/" + m.id; closeSearch(); });
+        results.appendChild(el);
+      });
+    }
+
+    openBtn.addEventListener("click", openSearch);
+    overlay.addEventListener("click", function (ev) { if (ev.target === overlay) closeSearch(); });
+    input.addEventListener("input", function () { renderResults(input.value); });
+    document.addEventListener("keydown", function (ev) {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "k") { ev.preventDefault(); openSearch(); }
+      if (ev.key === "Escape") closeSearch();
+    });
+  })();
+</script>
+
+</body>
+</html>
