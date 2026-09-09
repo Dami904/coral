@@ -49,20 +49,31 @@
  * Requires a SEPARATE buyer identity from Coral's own ACP_* vars —
  * ACP_BUYER_WALLET_ADDRESS/ACP_BUYER_WALLET_ID/ACP_BUYER_SIGNER_PRIVATE_KEY.
  *
+ * Chain follows config.chain/config.network (NETWORK=mainnet or sepolia),
+ * same treatment as live-acp-provider.ts — previously hardcoded to
+ * baseSepolia regardless of NETWORK.
+ *
  * Run: pnpm live:acp-buyer-test
  */
 import "dotenv/config";
-import { baseSepolia } from "viem/chains";
 import { AcpAgent, PrivyAlchemyEvmProviderAdapter, type JobRoomEntry, type JobSession } from "@virtuals-protocol/acp-node-v2";
+import { loadConfig } from "../src/config.js";
 
 // Coral's own real, deployed ACP identity — confirmed live this session
 // (see docs/API_NOTES.md's ACP section).
 const CORAL_PROVIDER_WALLET_ADDRESS = "0x90d9a36d8a262409c4f1f796f001a309ee6bf58e";
 const CORAL_OFFERING_NAME = "coral_cache";
-// A token Coral already has cached (confirmed cache_hit this session) —
-// picked so this test resolves to a real deliverable fast instead of
-// tripping SpendGuard's human-approval escalation.
-const TEST_TOKEN = "0x0000000000000000000000000000000000000001";
+// Testnet: a token Coral already has cached there (confirmed cache_hit
+// this session) — resolves fast instead of tripping the escalation path.
+// Mainnet: WETH's real address, deliberately NOT already cached on the
+// real mainnet memory DB (today's earlier smoke test paid for it but the
+// intelligence check failed before caching — see docs/API_NOTES.md), so
+// hiring Coral for it here is a genuine end-to-end cache-miss proof: pay
+// Sibyl for real, cache it, deliver it — not a pre-seeded cache hit.
+const TEST_TOKEN_BY_NETWORK: Record<string, string> = {
+  mainnet: "0x4200000000000000000000000000000000000006",
+  sepolia: "0x0000000000000000000000000000000000000001",
+};
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -71,16 +82,24 @@ function requireEnv(name: string): string {
 }
 
 async function main(): Promise<void> {
+  const config = loadConfig();
+  const testToken = TEST_TOKEN_BY_NETWORK[config.network];
+  if (!testToken) throw new Error(`no TEST_TOKEN configured for NETWORK=${config.network}`);
+
   const walletAddress = requireEnv("ACP_BUYER_WALLET_ADDRESS") as `0x${string}`;
   const walletId = requireEnv("ACP_BUYER_WALLET_ID");
   const signerPrivateKey = requireEnv("ACP_BUYER_SIGNER_PRIVATE_KEY");
+
+  if (config.network === "mainnet") {
+    console.log("[acp-buyer-test] NETWORK=mainnet: this job will spend real USDC to hire Coral for real");
+  }
 
   const buyer = await AcpAgent.create({
     evmProvider: await PrivyAlchemyEvmProviderAdapter.create({
       walletAddress,
       walletId,
       signerPrivateKey,
-      chains: [baseSepolia],
+      chains: [config.chain],
     }),
   });
 
@@ -142,12 +161,12 @@ async function main(): Promise<void> {
 
   await buyer.start(() => console.log("[acp-buyer-test] connected"));
 
-  console.log(`[acp-buyer-test] hiring Coral (${CORAL_PROVIDER_WALLET_ADDRESS}) for offering "${CORAL_OFFERING_NAME}"...`);
+  console.log(`[acp-buyer-test] hiring Coral (${CORAL_PROVIDER_WALLET_ADDRESS}) for offering "${CORAL_OFFERING_NAME}" (token ${testToken})...`);
   const jobId = await buyer.createJobByOfferingName(
-    baseSepolia.id,
+    config.chain.id,
     CORAL_OFFERING_NAME,
     CORAL_PROVIDER_WALLET_ADDRESS,
-    { token: TEST_TOKEN },
+    { token: testToken },
     { evaluatorAddress: buyerAddress },
   );
   console.log(`[acp-buyer-test] job created: ${jobId.toString()}`);
