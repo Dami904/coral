@@ -32,7 +32,7 @@ describe("X402IntelligenceClient", () => {
 
     expect(result.output).toBe(expected.tier);
     expect(result.sourceEndpoint).toContain(`token=${CONTRACT}`);
-    expect(result.raw).toMatchObject({ verified_tx: TX_A, tier: expected.tier, conviction_score: expected.conviction_score });
+    expect(result.raw).toMatchObject({ verified_tx: TX_A, conviction_tier: expected.tier, conviction_score: expected.conviction_score });
   });
 
   it("rejects a malformed tx hash the same way the server does (400)", async () => {
@@ -63,7 +63,7 @@ describe("X402IntelligenceClient retry/UNKNOWN handling", () => {
     mockFetch
       .mockRejectedValueOnce(new Error("ECONNRESET"))
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ tier: "high_conviction" }), {
+        new Response(JSON.stringify({ conviction_tier: "high_conviction" }), {
           status: 200,
           headers: { "X-PAYMENT-RESPONSE": "ok" },
         }),
@@ -74,6 +74,21 @@ describe("X402IntelligenceClient retry/UNKNOWN handling", () => {
 
     expect(result.output).toBe("high_conviction");
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to a `tier` field if `conviction_tier` isn't present (a different Sibyl API version, not assumed away)", async () => {
+    const mockFetch = globalThis.fetch as ReturnType<typeof vi.fn>;
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ tier: "high_conviction" }), {
+        status: 200,
+        headers: { "X-PAYMENT-RESPONSE": "ok" },
+      }),
+    );
+
+    const client = new X402IntelligenceClient({ endpointUrl: "http://example.invalid/api/evaluate", baseDelayMs: 1 });
+    const result = await client.invoke(CONTRACT, TX_A);
+
+    expect(result.output).toBe("high_conviction");
   });
 
   it("throws IntelligenceResultUnrecoverableError when a retry (not the first attempt) hits 409", async () => {

@@ -70,9 +70,13 @@ export function tierForToken(token) {
 function verdict(res, txHash, token) {
   const { tier, conviction_score } = tierForToken(token);
   res.writeHead(200, { "Content-Type": "application/json", "X-PAYMENT-RESPONSE": txHash });
+  // Wire field is `conviction_tier`, not `tier` — matches the real
+  // endpoint's actual live response (confirmed 2026-09-09, a real mainnet
+  // job), not its own self-documented (and wrong) bazaar example schema.
+  // See src/intelligence/x402Client.ts's deriveTier() doc comment.
   res.end(JSON.stringify({
     conviction_score,
-    tier,
+    conviction_tier: tier,
     builder_conviction: { note: "MOCK data — not a real evaluation" },
     community_seed: {},
     onchain_proof: {},

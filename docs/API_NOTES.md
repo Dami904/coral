@@ -223,6 +223,45 @@ mock's job is proving client *request* logic (headers, retry-on-402,
 single-use enforcement), not mirroring every response field; the client
 sends `?token=` regardless of what the mock does with it.
 
+### Real bug found live: the paid response's own tier field name (2026-09-09)
+
+The endpoint's own `extensions.bazaar.info.output.example` (captured
+above) documents the paid response as `{"conviction_score":24,"tier":
+"high_conviction",...}`. **That's wrong — not what the live endpoint
+actually returns.** Confirmed via a real mainnet ACP job (WETH,
+`0x4200...0006`, real $0.25 payment, tx logged in `PLAN.md`): the real
+field is `conviction_tier`, and the value itself is a bare word
+(`"medium"`), not the `_conviction`-suffixed form the example implies:
+
+```json
+{"agent":"SIBYL #20880","version":"evaluate-v1","token":"0x4200...0006",
+ "conviction_score":19,"conviction_max":30,"conviction_tier":"medium",
+ "criteria":{"builder_conviction":{...},"community_seed":{...},
+ "onchain_proof":{...}},"summary":"WETH conviction score: 19/30 (medium)...",
+ ...}
+```
+
+**Real, live consequence before this was caught**: `X402IntelligenceClient
+.deriveTier()` only checked for `raw.tier`, which doesn't exist on the
+real response — so it silently fell through to `"unknown"` on every real
+call. No error was thrown (the HTTP round trip and payment both
+genuinely succeeded), so this shipped a wrong-but-not-crashing result:
+the first real ACP-mediated mainnet job (job 77783, real payment
+confirmed by the guard's on-chain balance dropping by exactly $0.25)
+delivered `{"output":"unknown",...}` to the buyer instead of the real
+`"medium"` tier.
+
+**Fixed**: `deriveTier()` now checks `conviction_tier` first (the
+confirmed-live field), falling back to `tier` only if `conviction_tier`
+is absent — never assumed away entirely, since `raw_response.version`
+(`"evaluate-v1"`) hints a different API version could genuinely use the
+documented field name. `mock-x402-server/server.mjs`'s wire response
+renamed to match (`conviction_tier`, not `tier`) so the mock stays
+representative of the real behavior, not the endpoint's own inaccurate
+docs. This is exactly the kind of gap `CLAUDE.md`'s "source of truth"
+ordering exists to catch — the endpoint's self-documented schema was
+trusted over reproduced behavior, and it was wrong.
+
 ### x402 client failure modes (three-state model)
 - **CONFIRMED**: HTTP 200 with `X-PAYMENT-RESPONSE` header matching the
   submitted tx hash — parse the verdict body.

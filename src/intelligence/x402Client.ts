@@ -79,15 +79,24 @@ export class X402IntelligenceClient implements IntelligencePort {
 
   /**
    * The endpoint scores "builder conviction, community seed, and on-chain
-   * proof of work" (0-30 conviction_score + tier) — a project-conviction
-   * rating, not a safe/unsafe token-safety verdict. `tier` is the closest
-   * categorical field it actually returns; don't invent a binary this
-   * data doesn't have. See docs/API_NOTES.md.
+   * proof of work" (0-30 conviction_score + a tier label) — a
+   * project-conviction rating, not a safe/unsafe token-safety verdict;
+   * don't invent a binary this data doesn't have. See docs/API_NOTES.md.
+   *
+   * Real field confirmed live is `conviction_tier` (2026-09-09, a real
+   * mainnet ACP job for WETH: `{"conviction_tier":"medium",...}`) — NOT
+   * `tier`, which is what the endpoint's own self-documented
+   * `extensions.bazaar.info.output.example` schema claims. Their example
+   * doesn't match their real response; trust the live behavior, not the
+   * doc. `tier` is kept as a fallback in case a different Sibyl API
+   * version genuinely uses it (raw_response carried a `version` field,
+   * "evaluate-v1") — never assumed away, just deprioritized under the
+   * field actually observed live.
    */
   private static deriveTier(raw: unknown): string {
-    if (typeof raw === "object" && raw !== null && "tier" in raw && typeof raw.tier === "string") {
-      return raw.tier;
-    }
+    if (typeof raw !== "object" || raw === null) return "unknown";
+    if ("conviction_tier" in raw && typeof raw.conviction_tier === "string") return raw.conviction_tier;
+    if ("tier" in raw && typeof raw.tier === "string") return raw.tier;
     return "unknown";
   }
 }

@@ -951,3 +951,48 @@ Files: `contracts/SpendGuard.sol`, `contracts/MockUSDC.sol`,
     reproduced and confirmed pre-existing/unrelated by re-running against
     a clean stash of this change, and not reproducible in isolation or on
     a clean re-run).
+
+- **Real Base mainnet deploy + real ACP job proof (2026-09-09)**. Deployed
+  `SpendGuard` to Base mainnet: `0xfC10f0A357c74318451A583C30A1fb5C8c7a2407`
+  (verified on Basescan; deployer/owner `0x2993...B787`, agent
+  `0x004e...13F7`, real Base USDC, Sibyl's real payTo
+  `0xe3e14118238b5693c854674f7c276136a2dd311f` — independently
+  cross-checked against Sibyl's own `.well-known/agent-registration.json`,
+  not just the 402 response). First mainnet smoke test escalated as
+  designed (`humanApprovalThreshold` $0.20 < real $0.25 price), the real
+  `ownerApprove` payment landed on-chain, but the resume step's own
+  `checkPendingResolution` read lagged on Base's public multi-node RPC —
+  by the time it resolved, Sibyl's 120s `directTx` relay window had
+  closed. Real $0.25 spent with no cached result (the documented
+  "dangerous ordering" failure mode, now observed live, not just
+  theorized). Root-caused, then **fixed by queueing a real policy change**
+  (`queueSetPolicy`/`executeSetPolicy`, 1hr timelock, both confirmed
+  on-chain): `maxPerPayment` $0.50, `humanApprovalThreshold` $0.50 (above
+  the real price — ordinary queries now auto-pay in one continuous step,
+  no separate approval-detection race).
+  - **Added mainnet support to both ACP scripts** (`live-acp-provider.ts`,
+    `live-acp-buyer-test.ts`), previously hardcoded to `baseSepolia`
+    regardless of `NETWORK` — now follow `config.chain`/`config.network`,
+    intelligence client conditionally real vs mock. Redeployed to the
+    `coral-backend` EC2 box (latest code + `NETWORK=mainnet` config,
+    non-secret values only — never touched the box's private keys).
+  - **First real end-to-end ACP job completed on mainnet** (job 77783):
+    buyer funded 0.1 real USDC → Coral checked memory (miss) → paid Sibyl
+    $0.25 real USDC (guard balance dropped 0.51→0.26, confirmed on-chain)
+    → delivered a result → buyer completed the job. The escalation-timing
+    bug did not recur — the now-above-threshold price takes the direct
+    "sent" path with no separate approval round trip.
+  - **A second real, previously-unknown bug found from this live job**:
+    the deliverable came back `{"output":"unknown",...}` — see
+    `docs/API_NOTES.md`'s new "Real bug found live: the paid response's
+    own tier field name" entry. Sibyl's real response uses
+    `conviction_tier`, not the `tier` field its own self-documented bazaar
+    example schema claims. Fixed `X402IntelligenceClient.deriveTier()`
+    (checks `conviction_tier` first, falls back to `tier`) and the mock
+    server's wire shape to match; `pnpm test`: 155/155 pass.
+  - **Real, unresolved item from this session**: the `DEPLOYER_PRIVATE_KEY`
+    (this guard's owner) was accidentally pasted in plaintext into this
+    chat session. Recommended immediate ownership rotation
+    (`transferOwnership`/`acceptOwnership` to a fresh key) — not yet
+    confirmed done as of this entry. Treat as a live open risk until
+    confirmed otherwise.
