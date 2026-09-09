@@ -29,7 +29,8 @@ contract SpendGuard {
     uint256 public immutable budgetLogCapacity;
 
     address[] public vendorAllowlist;
-    uint256 public maxPerPayment;          // absolute ceiling — never approvable past this
+    uint256 public maxPerPayment;          // ceiling checked at requestPayment time; NOT
+                                            // rechecked in ownerApprove — see docs/LIMITATIONS.md
     uint256 public humanApprovalThreshold; // above this, auto-exec becomes pending-approval
     uint256 public budgetAmount;
     uint256 public budgetSeconds;

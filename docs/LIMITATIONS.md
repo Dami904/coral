@@ -34,6 +34,31 @@ behind each of these.
   construction): they only read as "already expired" once
   `block.timestamp` exceeds the window length, which holds everywhere
   this contract is actually deployed.
+- **`ownerApprove` doesn't recheck the allowlist or `maxPerPayment`
+  against the *current* policy, only budget-window and rate-limit.**
+  Found via an access-control review (2026-09-09), not previously
+  documented. `requestPayment` validates the allowlist and `maxPerPayment`
+  once, at request-creation time, then creates a `PendingRequest` if above
+  `humanApprovalThreshold`. `ownerApprove` re-validates
+  `_windowSum()`/`_windowCount()` against the current policy, but not the
+  other two rules — so a same-owner policy change (lowering
+  `maxPerPayment` below the pending amount, or removing the vendor from
+  the allowlist) between request and approval doesn't block the approval.
+  This contradicts `maxPerPayment`'s own code comment ("absolute ceiling —
+  never approvable past this"). Not attacker-exploitable: only `owner` can
+  queue a policy change, and only `owner` can approve, so no third party
+  can trigger this — it's a self-consistency gap a confused or
+  compromised owner key could hit, not a fund-drain path. Fix would be
+  re-running all four `requestPayment` checks inside `ownerApprove`
+  against current state, not just two of them; deliberately not done for
+  the live mainnet deployment (would need a redeploy) — see
+  `docs/THREAT_MODEL.md`'s "Owner private key leaks" entry.
+- **A `PendingRequest` never expires.** One created long ago, under very
+  different budget/rate/allowlist conditions, can still be approved or
+  rejected at any future time — no time-based staleness check exists on
+  the request itself, only on whether it's already been approved. Found
+  in the same review as the item above; same non-exploitability reasoning
+  (only `owner` can act on it either way).
 - **`owner` is still a single EOA, no multisig.** `setPolicy` and
   `withdraw` now go through a 1-hour queue-then-execute timelock (see
   `docs/THREAT_MODEL.md`), which bounds how fast a compromised or

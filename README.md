@@ -1,6 +1,10 @@
 # Coral
 
 [![CI](https://github.com/Dami904/coral/actions/workflows/ci.yml/badge.svg)](https://github.com/Dami904/coral/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/tests-155%20passing-1A8A5F)
+![Foundry](https://img.shields.io/badge/foundry-56%20passing-1A8A5F)
+[![Base mainnet](https://img.shields.io/badge/Base%20mainnet-live-0B79A6)](https://basescan.org/address/0xfC10f0A357c74318451A583C30A1fb5C8c7a2407)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 **The agent that never pays twice.**
 
@@ -32,10 +36,14 @@ memory and it starts paying again for checks it used to answer for free.
 
 Sibyl's `/api/evaluate` scores **builder conviction** — community seed,
 on-chain proof of work, a `conviction_score` (0–30) plus a categorical
-`tier` — not a safety or scam determination. This agent caches and replies
-with that `tier` as-is; it never invents a safe/unsafe verdict the
-underlying data doesn't support. See `docs/LIMITATIONS.md` and
-`docs/API_NOTES.md` for the verified request/response shape.
+`conviction_tier` — not a safety or scam determination. This agent caches
+and replies with that tier as-is (wire field: `output`); it never invents
+a safe/unsafe verdict the underlying data doesn't support. See
+`docs/LIMITATIONS.md` and `docs/API_NOTES.md` for the verified
+request/response shape — including a real bug found live on 2026-09-09:
+Sibyl's own self-documented example schema says `tier`, but the real
+endpoint returns `conviction_tier`. Fixed in `X402IntelligenceClient`,
+with a fallback to `tier` kept in case a different API version uses it.
 
 No graph or traversal claims either: Sibyl's own homepage calls its memory
 "graph-structured"; the shipped SDK exposes no relation-traversal API. This
@@ -114,20 +122,42 @@ the full design rationale and `docs/LIMITATIONS.md`'s "Gateway (Direction
 B)" section for its accepted edge cases (a narrow concurrent-reuse race
 on the same tx hash, no refund on a downstream failure).
 
-## Partner stacks (Base)
+## What's real vs. staged
 
-Both exercised live, both independently checkable on Basescan:
+| Piece | Status | Detail |
+|---|---|---|
+| Sibyl Memory | ✅ Live | Real `sibyl-memory-mcp` over stdio, real SQLite, deletion-tested against both deployed contracts. |
+| `SpendGuard`, Base mainnet | ✅ Live | Deployed, Basescan-verified, funded, and paying out real USDC through a real, on-chain-executed policy. |
+| `SpendGuard`, Base Sepolia | ✅ Live | Timelocked policy, fixed-capacity ring buffers, two-step ownership. |
+| x402 payment, real Sibyl endpoint | ✅ Live | Real `directTx` settlement against Sibyl's production endpoint on mainnet — real USDC paid, real conviction data returned. |
+| Coral on Virtuals ACP | ✅ Live | Listed and hireable; one full real job completed end-to-end on mainnet (funded → paid → delivered). |
+| Free HTTP gateway | ⏸ Testnet only | Wired to the mock evaluator on purpose — flipping to real mainnet money needs the same fix already applied to the ACP path. |
+| Ping messaging | ⏸ Staged | Built and unit-tested against the real SDK. Ping has no testnet — a real send is real, public, irreversible mainnet spend, held for a deliberate go-ahead. |
+| Gateway mode (paid, via Ping) | ⏸ Staged | Another agent pays Coral over Ping for the same lookup. Unit-tested against decoded receipts, not yet exercised against a real paying counterparty. |
+
+## Partner stacks (Base)
 
 - **Ping (A2A messaging)** — real npm package (`ping-onchain`), poll-loop
   listener (`src/ping/`) built and unit-tested; the real mainnet send is
   deliberately not yet executed (see `docs/LIMITATIONS.md`) but the code
   path is complete and verified against the real SDK source.
-- **On-chain-enforced spend policy** — `SpendGuard.sol` deployed to Base
-  Sepolia, real payments exercised live end-to-end:
-  - Day 3 payment: [`0xc7047761a5ce321dca8ef37add4d708af1fc2b8e71e580b2c0d85b0a410afca2`](https://sepolia.basescan.org/tx/0xc7047761a5ce321dca8ef37add4d708af1fc2b8e71e580b2c0d85b0a410afca2)
-  - Day 5 payment (full directTx flow): [`0x369508bea3fb14a11035b4f2b30d34ac7d355f1ae7cdb23261a2493f44c6e320`](https://sepolia.basescan.org/tx/0x369508bea3fb14a11035b4f2b30d34ac7d355f1ae7cdb23261a2493f44c6e320)
-  - Contract (current, real Circle testnet USDC): [`SpendGuard`](https://sepolia.basescan.org/address/0x1367B24C8377F659124f22ABC00fb07e5835404b) · [`USDC`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e)
-  - Prior deployment (MockUSDC, superseded 2026-09-06): [`SpendGuard`](https://sepolia.basescan.org/address/0xc243822863f1770a7187EbD630D150379e58EEdE) · [`MockUSDC`](https://sepolia.basescan.org/address/0xfC10f0A357c74318451A583C30A1fb5C8c7a2407)
+- **On-chain-enforced spend policy** — `SpendGuard.sol`, real payments
+  exercised live end-to-end on **both** networks:
+  - **Base mainnet** (chain 8453) — [`SpendGuard`](https://basescan.org/address/0xfC10f0A357c74318451A583C30A1fb5C8c7a2407) (verified source), real [Base USDC](https://basescan.org/address/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913):
+    - Deploy: [`0xf74e724a80bc7e28c170e1f677bfdac0ecfff305126c5d0741fbee9743050d1f`](https://basescan.org/tx/0xf74e724a80bc7e28c170e1f677bfdac0ecfff305126c5d0741fbee9743050d1f)
+    - First real escalated payment: [`0xe70d3765e7955850cd22c22345a5e877f358d5776eaff0880ec65bac985ead8b`](https://basescan.org/tx/0xe70d3765e7955850cd22c22345a5e877f358d5776eaff0880ec65bac985ead8b)
+    - Policy raised above Sibyl's real price (removes the escalation race for ordinary queries): [queue](https://basescan.org/tx/0x7f6b449f459caab01945c99f8c210cbdf0aac0201becb4797d64d1ec162135e0) · [execute](https://basescan.org/tx/0xb3e8c286dbcf809bcd2275d4484e287ddfd795eb8215485f64e7d7da28280ace)
+    - Real ACP-mediated payment (job below), auto-paid: [`0x0f8c8ce6bc987275e9d320dfdb7b66f7d2e24fd629890824fc8939172c5b02d6`](https://basescan.org/tx/0x0f8c8ce6bc987275e9d320dfdb7b66f7d2e24fd629890824fc8939172c5b02d6)
+  - **Base Sepolia** (chain 84532) — [`SpendGuard`](https://sepolia.basescan.org/address/0x1367B24C8377F659124f22ABC00fb07e5835404b), real Circle testnet [USDC](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e):
+    - [`0xc7047761a5ce321dca8ef37add4d708af1fc2b8e71e580b2c0d85b0a410afca2`](https://sepolia.basescan.org/tx/0xc7047761a5ce321dca8ef37add4d708af1fc2b8e71e580b2c0d85b0a410afca2)
+    - [`0x369508bea3fb14a11035b4f2b30d34ac7d355f1ae7cdb23261a2493f44c6e320`](https://sepolia.basescan.org/tx/0x369508bea3fb14a11035b4f2b30d34ac7d355f1ae7cdb23261a2493f44c6e320)
+- **Coral on Virtuals ACP** — a third "another agent pays Coral" surface,
+  listed on Virtuals' marketplace as offering `coral_cache` (0.1 USDC).
+  Job `77783`: a real buyer funded 0.1 real USDC to evaluate WETH's own
+  mainnet contract (deliberately uncached, so the miss was genuine) —
+  Coral's guard balance dropped exactly $0.25 on-chain (the tx above),
+  matching the real Sibyl payment, before the buyer received their
+  result. [Listing](https://app.virtuals.io/acp/agents/01a06873-3eee-777e-8f64-5d337d6d6342?tab=console).
 
 ## Setup
 
@@ -152,6 +182,11 @@ never runs as part of the default test suite — see the `scripts` block in
 
 ## Docs
 
+- **[Technical docs](https://dami904.github.io/coral/docs.html)** — the
+  detailed reference: architecture, every real testnet and mainnet
+  transaction, the full test list (all 155 unit + 56 Foundry tests, by
+  name), and the trust model. **[Landing page](https://dami904.github.io/coral/)**
+  has a live "try it now" widget against the real deployed gateway.
 - [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) — stated plainly: `SpendGuard`'s
   budget/rate logs are now fixed-capacity ring buffers, not unbounded, but
   policy can't be loosened past the capacity fixed at deploy time; the
@@ -174,39 +209,33 @@ never runs as part of the default test suite — see the `scripts` block in
 - [`PLAN.md`](PLAN.md) — the full running design log: architecture,
   verified facts, demo script, and day-by-day build history.
 
-## Going to mainnet (prepared, not executed)
+## Mainnet — live, not just prepared
 
-Everything needed to run this on Base mainnet is built and ready — a
-mainnet Foundry profile, `script/DeployMainnet.s.sol`, env scaffolding
-(`NETWORK=mainnet` + `MAINNET_*` vars in `.env.example`), a Ping
-registration script, and a mainnet smoke-test script — but **nothing here
-has been broadcast or funded**. This is deliberate: real money and a real,
-public, irreversible mainnet footprint should never happen from an
-automated build session (see `CLAUDE.md`). When you decide to go live, the
-remaining steps are:
+`SpendGuard` is deployed to Base mainnet at
+[`0xfC10f0A357c74318451A583C30A1fb5C8c7a2407`](https://basescan.org/address/0xfC10f0A357c74318451A583C30A1fb5C8c7a2407)
+(verified source), funded with real USDC, and has paid out real money —
+including one full real job hired through Virtuals ACP, end to end. Every
+transaction is linked in [Partner stacks](#partner-stacks-base) above, and
+the full chronological detail (plus every real testnet transaction and
+the complete test list) lives in the
+[technical docs](https://dami904.github.io/coral/docs.html).
 
-1. **Rehearse for free**: `anvil --fork-url $BASE_MAINNET_RPC_URL` (or even
-   a plain local `anvil`), then `forge script script/DeployMainnet.s.sol:DeployMainnet
-   --rpc-url http://127.0.0.1:8545 --broadcast` to confirm the deploy
-   itself is clean before spending anything real.
-2. **Fund two wallets** — a deployer/owner wallet and an agent wallet —
-   with roughly **0.01 ETH total** on Base mainnet (covers the deploy,
-   Ping registration, and a full demo run plus one repeat run's worth of
-   gas + Ping message fees). Keeping this minimal isn't just about cost:
-   until a multisig replaces the single owner EOA (see
-   `docs/THREAT_MODEL.md`), a smaller balance is also a smaller blast
-   radius.
-3. `pnpm deploy:mainnet` — the real broadcast.
-4. Transfer **~$2.50–3.00 real USDC** to the deployed guard address (after
-   verifying it on Basescan) — enough for roughly 8–12 real `/api/evaluate`
-   calls at the confirmed $0.25 price.
-5. `pnpm live:ping-register` — one-time, real gas, registers the agent
-   wallet on Ping.
-6. `pnpm live:mainnet-smoke` — one real end-to-end query, proving the full
-   wiring before recording the demo.
+`humanApprovalThreshold` is deliberately set above Sibyl's real $0.25
+price ($0.50, raised from an initial $0.20 via a real, timelocked
+`queueSetPolicy`/`executeSetPolicy` pair), so an ordinary real query
+auto-pays in one continuous step — no separate human-approval round trip,
+and no race against Sibyl's 120-second `directTx` relay window. That race
+was real and was lost once, on this project's own first mainnet payment
+(a real $0.25 spent with no cached result) — see
+`docs/API_NOTES.md`'s x402 section for the full account, root cause, and
+fix.
 
-Each of these is a single, separate, deliberate command — never chained or
-automated together.
+**Still deliberately not done**: real Ping registration and a real Ping
+send. Ping has no testnet — a real message is real, public, irreversible
+mainnet spend, held for an explicit go-ahead per `CLAUDE.md`'s own rule
+against unattended mainnet actions. `pnpm live:ping-register` and the
+Ping poll listener are built and unit-tested, ready to run when that
+decision is made.
 
 ## License
 

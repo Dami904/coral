@@ -67,13 +67,24 @@ what's simplified and `PLAN.md` for the design rationale.
   `WithdrawQueued`/`PolicyQueued` events. It does **not** fully close the
   risk: within that hour the same key can still call `ownerApprove` on any
   pending escalated payment immediately (deliberately undelayed, see
-  above) — bounded by the same allowlist/`maxPerPayment` checks the agent
-  path already enforces, so this doesn't let a leaked owner key redirect
-  funds anywhere but the allowlisted vendor or exceed per-payment/budget/
-  rate limits. This key still needs the strongest protection in the
-  system; it currently sits in a plaintext local `.env` file (fine for a
-  hackathon testnet demo, unacceptable for anything holding real funds —
-  see "out of scope" below).
+  above). Bounded, but less tightly than the wording above previously
+  implied — `ownerApprove` only rechecks `_windowSum()`/`_windowCount()`
+  (budget-window and rate-limit) against the *current* policy at approval
+  time; it does **not** recheck the allowlist or `maxPerPayment` against
+  the current policy, only whatever they were at `requestPayment` time. A
+  request created, then approved after a same-owner policy change lowers
+  `maxPerPayment` below the pending amount or removes the vendor from the
+  allowlist, still sends the original amount to the original address —
+  contradicting `maxPerPayment`'s own code comment ("never approvable past
+  this"). Not attacker-exploitable (only `owner` can queue a policy change
+  *and* only `owner` can approve — no third party can trigger this), but a
+  real self-consistency gap a confused or compromised owner key could hit.
+  Compounding it: a `PendingRequest` has no expiry at all — one created
+  long ago under very different conditions can still be approved today.
+  See `docs/LIMITATIONS.md`'s matching entry. This key still needs the
+  strongest protection in the system; it currently sits in a plaintext
+  local `.env` file (fine for a hackathon testnet demo, unacceptable for
+  anything holding real funds — see "out of scope" below).
 - **Vendor/payTo private key leaks**: no impact on this system's own
   funds — it only ever *receives* USDC the guard already decided to send.
   Whoever holds it can move what's already been paid to it, which is
