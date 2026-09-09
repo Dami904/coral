@@ -548,7 +548,7 @@
         </div>
         <div class="stat-card">
           <div class="num">1</div>
-          <div class="label">function the entire critical path runs through: <code>handleTokenQuery</code> in <code>src/decisionCore.ts</code></div>
+          <div class="label">function the entire critical path runs through: <code>handleJobQuery</code> in <code>src/decisionCore.ts</code></div>
         </div>
       </div>
     </div>
@@ -581,6 +581,9 @@
           <h3>Respond</h3>
           <p>Only now does money move, if it has to. The verdict is cached; the decision is journaled.</p>
         </div>
+      </div>
+      <div class="proof-note" data-reveal>
+        Step 02's "Recall" is always an exact match on the contract address &mdash; that's the only lookup allowed to decide whether Coral pays. A separate <code>GET /search</code> endpoint also exists for fuzzy, full-text lookups by name or ticker, but it's deliberately kept outside this path: it can only ever suggest, never authorize a cache hit or a payment.
       </div>
     </div>
   </section>
