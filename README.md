@@ -23,6 +23,10 @@ built on top of it: the part that turns "have I already answered this"
 into "then don't pay again," and enforces that on-chain instead of just
 hoping the agent remembers to check.
 
+## Demo
+
+[![Coral demo video](https://img.youtube.com/vi/7tjGCRmZ16w/maxresdefault.jpg)](https://youtu.be/7tjGCRmZ16w)
+
 ## The problem
 
 Repeat "is this token safe / worth looking at" questions flood crypto
