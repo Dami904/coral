@@ -144,23 +144,23 @@ every future ask for that same input is free until it goes stale.
 
 ```mermaid
 flowchart TD
-    subgraph Off-chain agent process
-        A[Inbound query<br/>HTTP / ACP / Ping] --> B["decisionCore.ts<br/>handleJobQuery"]
-        B -->|1. recall| C[(Sibyl Memory<br/>sibyl-memory-mcp, local SQLite)]
-        C -->|cache hit| A
+    subgraph agent["Off-chain agent process"]
+        A["Inbound query<br/>HTTP / ACP / Ping"] --> B["decisionCore.ts<br/>handleJobQuery"]
+        B -->|"1. recall"| C[("Sibyl Memory<br/>sibyl-memory-mcp, local SQLite")]
+        C -->|"cache hit"| A
     end
-    subgraph On-chain, Base
-        D[SpendGuard.sol]
+    subgraph chain["On-chain (Base)"]
+        D["SpendGuard.sol"]
     end
-    subgraph External, trusted for content only
-        E[Sibyl x402<br/>/api/evaluate]
+    subgraph ext["External (content trusted, not payment-authoritative)"]
+        E["Sibyl x402<br/>/api/evaluate"]
     end
-    B -->|2. cache miss: request payment| D
-    D -->|blocked| B
-    D -->|paid, real USDC| E
-    E -->|3. real result| B
-    B -->|4. cache + journal| C
-    C -->|reply| A
+    B -->|"2. cache miss: request payment"| D
+    D -->|"blocked"| B
+    D -->|"paid, real USDC"| E
+    E -->|"3. real result"| B
+    B -->|"4. cache + journal"| C
+    C -->|"reply"| A
 ```
 
 | File / module | Role |
