@@ -301,6 +301,9 @@
           <li><b>Decide</b> - a real miss hands the decision to <code>SpendGuard</code>, a deployed contract, not the agent's own reasoning.</li>
           <li><b>Pay, cache, journal</b> - only once payment clears does Coral call Sibyl and cache the result. The payment is journaled to memory <i>before</i> that call, so even a downstream failure leaves a reconcilable trail.</li>
         </ol>
+        <h2 id="h-agent">One hired agent today, by design not by limitation</h2>
+        <p><code>handleJobQuery</code> never hardcodes Sibyl. It takes a <code>hiredAgentId</code> (an opaque string) and an <code>IntelligencePort</code> - a generic <code>invoke(input, txHash) -&gt; output</code> interface any hired agent could sit behind, and the cache key partitions by that id so two different agents' answers never collide.</p>
+        <p>That said, be precise about what exists right now: <code>X402IntelligenceClient</code>, wired to Sibyl's real x402 endpoint, is the <b>only</b> real implementation of that interface in this codebase today. Nothing else is plugged in, and nothing else has been paid. Adding a second hired agent means writing and independently verifying a new adapter for that agent's real request/response contract first - the architecture is ready for it, but "ready" isn't "done."</p>
         <h2 id="h-rules">SpendGuard's four rules</h2>
         <p class="subtle">Coral's wallet can only ever <i>request</i> a payment - it never holds direct transfer authority. Every request is checked against four rules, in this fixed order, every time.</p>
         <div class="table-wrap">
