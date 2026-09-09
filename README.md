@@ -1,3 +1,14 @@
+```
+ ██████╗ ██████╗ ██████╗  █████╗ ██╗     
+██╔════╝██╔═══██╗██╔══██╗██╔══██╗██║     
+██║     ██║   ██║██████╔╝███████║██║     
+██║     ██║   ██║██╔══██╗██╔══██║██║     
+╚██████╗╚██████╔╝██║  ██║██║  ██║███████╗
+ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝
+
+        on-chain agent · memory-gated payments · Base mainnet
+```
+
 # Coral
 
 [![CI](https://github.com/Dami904/coral/actions/workflows/ci.yml/badge.svg)](https://github.com/Dami904/coral/actions/workflows/ci.yml)
