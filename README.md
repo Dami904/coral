@@ -252,7 +252,7 @@ mock stands in for what.
 | `SpendGuard`, Base mainnet | ✅ Live | Deployed, Basescan-verified, funded, paying out real USDC through a real, on-chain-executed policy. |
 | `SpendGuard`, Base Sepolia | ✅ Live | Timelocked policy, fixed-capacity ring buffers, two-step ownership. |
 | x402 payment, real Sibyl endpoint | ✅ Live | Real `directTx` settlement against Sibyl's production endpoint on mainnet — real USDC paid, real conviction data returned. |
-| Coral on Virtuals ACP | ✅ Live | Listed and hireable; one full real job completed end-to-end on mainnet (funded → paid → delivered). |
+| Coral on [Virtuals ACP](https://app.virtuals.io/acp/agents/01a06873-3eee-777e-8f64-5d337d6d6342?tab=acp) | ✅ Live | Listed and hireable as the `coral_cache` offering, 0.1 USDC/job; one full real job completed end-to-end on mainnet (funded → paid → delivered). |
 | Free HTTP gateway | ⏸ Testnet only | Wired to the mock evaluator on purpose — flipping to real mainnet money needs the same fix already applied to the ACP path. |
 | Ping messaging | ⏸ Staged | Built and unit-tested against the real SDK. Ping has no testnet — a real send is real, public, irreversible mainnet spend, held for a deliberate go-ahead. |
 | Gateway mode (paid, via Ping) | ⏸ Staged | Another agent pays Coral over Ping for the same lookup. Unit-tested against decoded receipts, not yet exercised against a real paying counterparty. |
@@ -355,7 +355,9 @@ the default test suite — see the `scripts` block in `package.json`.
 `SpendGuard` is deployed to Base mainnet at
 [`0xfC10f0A357c74318451A583C30A1fb5C8c7a2407`](https://basescan.org/address/0xfC10f0A357c74318451A583C30A1fb5C8c7a2407)
 (verified source), funded with real USDC, and has paid out real money —
-including one full real job hired through Virtuals ACP, end to end.
+including one full real job hired through
+[Virtuals ACP](https://app.virtuals.io/acp/agents/01a06873-3eee-777e-8f64-5d337d6d6342?tab=acp),
+end to end.
 
 ![Coral's real ACP engagement on Virtuals — job 77783, celomind → Coral, 0.1 token, work submitted and budget set](docs/assets/acp-job-77783.png)
 
