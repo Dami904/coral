@@ -26,22 +26,26 @@
  *                           human sign-off first
  *   job.completed/.rejected/.expired -> log, drop any tracked state
  *
- * Intelligence check points at the local mock x402 server, same fix
- * applied to live-http-server.ts and for the same reason: SpendGuard
- * here runs on Base Sepolia, and Sibyl's real endpoint only recognizes
- * Base mainnet transactions — see docs/LIMITATIONS.md.
+ * Intelligence check: on testnet (default), points at the local mock
+ * x402 server, same fix applied to live-http-server.ts and for the same
+ * reason — SpendGuard's testnet deployment runs on Base Sepolia, and
+ * Sibyl's real endpoint only recognizes Base mainnet transactions (see
+ * docs/LIMITATIONS.md). On NETWORK=mainnet, points at Sibyl's real
+ * endpoint instead — same real-money path as scripts/live-mainnet-smoke.ts
+ * (real $0.25/call, real settlement) — and the ACP agent's own Privy
+ * wallet adapter follows config.chain (base vs baseSepolia) instead of
+ * being hardcoded to testnet.
  *
  * Run: pnpm live:acp-provider
  */
-import { baseSepolia } from "viem/chains";
 import { AcpAgent, AssetToken, PrivyAlchemyEvmProviderAdapter, type JobRoomEntry, type JobSession } from "@virtuals-protocol/acp-node-v2";
 import { loadConfig } from "../src/config.js";
 import { handleJobQuery, resumeAfterApproval, type HandleTokenQueryDeps } from "../src/decisionCore.js";
-import type { ResumableChainPort } from "../src/types.js";
+import type { IntelligencePort, ResumableChainPort } from "../src/types.js";
 import { X402IntelligenceClient } from "../src/intelligence/x402Client.js";
 import { formatAcpDeliverable, parseAcpRequirement } from "../src/acp/acpProvider.js";
 import { createKeyedLock } from "../src/lib/keyedLock.js";
-import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID, startMockX402Server } from "./lib/liveHarness.js";
+import { makeChainClient, makeMemoryClient, SIBYL_HIRED_AGENT_ID, startMockX402Server, type MockX402Server } from "./lib/liveHarness.js";
 
 // What Coral pays SpendGuard/Sibyl for a fresh check — matches the real
 // Sibyl price, same as live-http-server.ts. NOT what an ACP buyer pays
@@ -74,9 +78,18 @@ async function main(): Promise<void> {
 
   const chain = makeChainClient(config);
   const memory = makeMemoryClient(config);
-  const mockServer = await startMockX402Server();
-  console.log(`[acp-provider] local mock x402 server listening at ${mockServer.endpoint}`);
-  const intelligence = new X402IntelligenceClient({ endpointUrl: mockServer.endpoint });
+  const isMainnet = config.network === "mainnet";
+
+  let mockServer: MockX402Server | null = null;
+  let intelligence: IntelligencePort;
+  if (isMainnet) {
+    console.log("[acp-provider] NETWORK=mainnet: using Sibyl's REAL endpoint — real USDC will move on every cache miss");
+    intelligence = new X402IntelligenceClient({ endpointUrl: "https://sibylcap.com/api/evaluate" });
+  } else {
+    mockServer = await startMockX402Server();
+    console.log(`[acp-provider] local mock x402 server listening at ${mockServer.endpoint}`);
+    intelligence = new X402IntelligenceClient({ endpointUrl: mockServer.endpoint });
+  }
 
   try {
     await runProvider();
@@ -86,7 +99,7 @@ async function main(): Promise<void> {
     // found" — confirmed live: without this, the process hung indefinitely
     // on the still-open mock server instead of exiting with a clean
     // error). Close what's already open before propagating.
-    await Promise.allSettled([memory.close(), mockServer.close()]);
+    await Promise.allSettled([memory.close(), mockServer?.close() ?? Promise.resolve()]);
     throw err;
   }
 
@@ -111,7 +124,7 @@ async function main(): Promise<void> {
       walletAddress: walletAddress as `0x${string}`,
       walletId,
       signerPrivateKey,
-      chains: [baseSepolia],
+      chains: [config.chain],
     }),
   });
 
@@ -319,7 +332,7 @@ async function main(): Promise<void> {
   const shutdown = () => {
     console.log("[acp-provider] shutting down...");
     clearInterval(resumeTimer);
-    void Promise.allSettled([agent.stop(), memory.close(), mockServer.close()]).finally(() => process.exit(0));
+    void Promise.allSettled([agent.stop(), memory.close(), mockServer?.close() ?? Promise.resolve()]).finally(() => process.exit(0));
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
