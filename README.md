@@ -157,6 +157,9 @@ on the same tx hash, no refund on a downstream failure).
     - [`0x369508bea3fb14a11035b4f2b30d34ac7d355f1ae7cdb23261a2493f44c6e320`](https://sepolia.basescan.org/tx/0x369508bea3fb14a11035b4f2b30d34ac7d355f1ae7cdb23261a2493f44c6e320)
 - **Coral on Virtuals ACP** — a third "another agent pays Coral" surface,
   listed on Virtuals' marketplace as offering `coral_cache` (0.1 USDC).
+
+  ![Coral's real ACP engagement on Virtuals — job 77783, celomind → Coral, 0.1 token, work submitted and budget set](docs/assets/acp-job-77783.png)
+
   Job `77783`: a real buyer funded 0.1 real USDC to evaluate WETH's own
   mainnet contract (deliberately uncached, so the miss was genuine) —
   Coral's guard balance dropped exactly $0.25 on-chain (the tx above),
